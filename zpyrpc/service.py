@@ -16,7 +16,6 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-import logging
 import sys
 import traceback
 
@@ -138,7 +137,7 @@ class RPCService(RPCBase):
         reply.extend([b'|', self.msg_id, status])
         reply.extend(data)
         return reply
-                    
+
     def _handle_request(self, msg_list):
         """Handle an incoming request.
 
@@ -161,22 +160,22 @@ class RPCService(RPCBase):
         args, kwargs = self._serializer.deserialize_args_kwargs(data)
 
         # Find and call the actual handler for message.
-        handler = getattr(self, method, None)
-        if handler is not None and getattr(handler, 'is_rpc_method', False):
+        try:
+            handler = getattr(self, method, None)
+            if handler is None or not getattr(handler, 'is_rpc_method', False):
+                raise NotImplemented("Unknown RPC method %r" % method)
+            result = handler(*args, **kwargs)
+        except Exception:
+            self._send_error()
+        else:
             try:
-                result = handler(*args, **kwargs)
+                data_list = self._serializer.serialize_result(result)
             except Exception:
                 self._send_error()
             else:
-                try:
-                    data_list = self._serializer.serialize_result(result)
-                except Exception:
-                    self._send_error()
-                else:
-                    reply = self._build_reply(b'SUCCESS', data_list)
-                    self.stream.send_multipart(reply)
-        else:
-            logging.error('Unknown RPC method: %s' % method)
+                reply = self._build_reply(b'SUCCESS', data_list)
+                self.stream.send_multipart(reply)
+
         self.idents = None
         self.msg_id = None
 
