@@ -163,7 +163,7 @@ class RPCService(RPCBase):
         try:
             handler = getattr(self, method, None)
             if handler is None or not getattr(handler, 'is_rpc_method', False):
-                raise NotImplemented("Unknown RPC method %r" % method)
+                raise NotImplementedError("Unknown RPC method %r" % method)
             result = handler(*args, **kwargs)
         except Exception:
             self._send_error()
