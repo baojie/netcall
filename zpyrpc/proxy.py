@@ -185,8 +185,8 @@ class RPCServiceProxy(RPCServiceProxyBase):
         self.socket.send_multipart(msg_list)
         msg_list = self.socket.recv_multipart()
         if not msg_list[0] == b'|':
-            raise RPCError('Unexpected reply message format in AsyncRPCServiceProxy._handle_reply')
-        msg_id = msg_list[1]
+            raise RPCError('Unexpected reply message format in RPCServiceProxy._handle_reply')
+        #msg_id = msg_list[1]
         status = msg_list[2]
         if status == b'SUCCESS':
             result = self._serializer.deserialize_result(msg_list[3:])
@@ -204,7 +204,7 @@ class RemoteMethodBase(object):
 
     def __init__(self, proxy, method):
         self.proxy = proxy
-        self.method = method    
+        self.method = method
 
 
 class AsyncRemoteMethod(RemoteMethodBase):
