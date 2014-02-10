@@ -13,8 +13,8 @@ Some of the nice features:
 * Round robin load balance requests to multiple services.
 * Set a timeout on RPC calls.
 * Route requests using all of the glory of ZeroMQ.
-* Fast, but simple.
-* Both synchronous and asynchronous clients/proxies.
+* Fast and simple.
+* Both synchronous and asynchronous clients/proxies (both Gevent and Tornado).
 * Run multple services in a single process.
 * Pluggable serialization (default is pickle, json included).
 
@@ -23,8 +23,8 @@ Some of the nice features:
 To create a simple service:
 
 ```
-from zpyrpc import RPCService
-class Echo(RPCService):
+from zpyrpc import TornadoRPCService
+class Echo(TornadoRPCService):
 
     @rpc_method
     def echo(self, s):
