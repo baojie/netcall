@@ -3,10 +3,11 @@
 Authors:
 
 * Brian Granger
+* Alexander Glyzov
 """
 
 #-----------------------------------------------------------------------------
-#  Copyright (C) 2012. Brian Granger, Min Ragan-Kelley  
+#  Copyright (C) 2012. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
 #  the file COPYING.BSD, distributed as part of this software.
@@ -22,9 +23,11 @@ import traceback
 import uuid
 
 import zmq
+
+from zmq                     import green
 from zmq.eventloop.zmqstream import ZMQStream
-from zmq.eventloop.ioloop import DelayedCallback
-from zmq.utils import jsonapi
+from zmq.eventloop.ioloop    import IOLoop, DelayedCallback
+from zmq.utils               import jsonapi
 
 from .base import RPCBase
 
@@ -38,10 +41,6 @@ class RPCServiceProxyBase(RPCBase):
     def _create_socket(self):
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.setsockopt(zmq.IDENTITY, bytes(uuid.uuid4()))
-        self._init_stream()
-
-    def _init_stream(self):
-        pass
 
     def _build_request(self, method, args, kwargs):
         msg_id = bytes(uuid.uuid4())
@@ -51,20 +50,116 @@ class RPCServiceProxyBase(RPCBase):
         msg_list.extend(data_list)
         return msg_id, msg_list
 
+    def call(self, method, *args, **kwargs):
+        """Call the remote method with *args and **kwargs.
 
-class AsyncRPCServiceProxy(RPCServiceProxyBase):
-    """An asynchronous service proxy."""
+        Parameters
+        ----------
+        method : str
+            The name of the remote method to call.
+        args : tuple
+            The tuple of arguments to pass as `*args` to the RPC method.
+        kwargs : dict
+            The dict of arguments to pass as `**kwargs` to the RPC method.
 
-    def __init__(self, loop=None, context=None, serializer=None):
-        super(AsyncRPCServiceProxy, self).__init__(
-            loop=loop, context=context,
-            serializer=serializer
-        )
+        Returns
+        -------
+        result : object
+            If the call succeeds, the result of the call will be returned.
+            If the call fails, `RemoteRPCError` will be raised.
+        """
+        if not self._ready:
+            raise RuntimeError('bind or connect must be called first')
+
+        msg_id, msg_list = self._build_request(method, args, kwargs)
+
+        self.socket.send_multipart(msg_list)
+        msg_list = self.socket.recv_multipart()
+
+        if not msg_list[0] == b'|':
+            raise RPCError('Unexpected reply message format in RPCServiceProxy._handle_reply')
+
+        #msg_id = msg_list[1]
+        status = msg_list[2]
+
+        if status == b'SUCCESS':
+            result = self._serializer.deserialize_result(msg_list[3:])
+            return result
+        elif status == b'FAILURE':
+            error_dict = jsonapi.loads(msg_list[3])
+            raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
+
+    def __getattr__(self, name):
+        return RemoteMethod(self, name)
+
+
+class SyncRPCServiceProxy(RPCServiceProxyBase):
+    """A synchronous service proxy whose requests will block."""
+
+    def __init__(self, context=None, **kwargs):
+        """
+        Parameters
+        ==========
+        context : Context
+            An existing Context instance, if not passed, zmq.Context.instance()
+            will be used.
+        serializer : Serializer
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+        """
+        assert context is None or isinstance(context, zmq.Context)
+        self.context = context if context is not None else zmq.Context.instance()
+        super(SyncRPCServiceProxy, self).__init__(**kwargs)
+
+
+class GeventRPCServiceProxy(RPCServiceProxyBase):
+    """ An asynchronous service proxy whose requests will not block.
+        Uses the Gevent compatibility layer of pyzmq (zmq.green).
+    """
+
+    def __init__(self, context=None, **kwargs):
+        """
+        Parameters
+        ==========
+        context : Context
+            An existing Context instance, if not passed, green.Context.instance()
+            will be used.
+        serializer : Serializer
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+        """
+        assert context is None or isinstance(context, green.Context)
+        self.context = context if context is not None else green.Context.instance()
+        super(GeventRPCServiceProxy, self).__init__(**kwargs)  # base class
+
+
+class TornadoRPCServiceProxy(RPCServiceProxyBase):
+    """An asynchronous service proxy (based on Tornado IOLoop)"""
+
+    def __init__(self, context=None, ioloop=None, **kwargs):
+        """
+        Parameters
+        ==========
+        ioloop : IOLoop
+            An existing IOLoop instance, if not passed, zmq.IOLoop.instance()
+            will be used.
+        context : Context
+            An existing Context instance, if not passed, zmq.Context.instance()
+            will be used.
+        serializer : Serializer
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+        """
+        assert context is None or isinstance(context, zmq.Context)
+        self.context    = context if context is not None else zmq.Context.instance()
+        self.ioloop     = IOLoop.instance() if ioloop is None else ioloop
         self._callbacks = {}
+        super(TornadoRPCServiceProxy, self).__init__(**kwargs)
 
-    def _init_stream(self):
-        self.stream = ZMQStream(self.socket, self.loop)
-        self.stream.on_recv(self._handle_reply)
+    def _create_socket(self):
+        super(TornadoRPCServiceProxy, self)._create_socket()
+        self.socket = ZMQStream(self.socket, self.ioloop)
+        self.socket.on_recv(self._handle_reply)
 
     def _handle_reply(self, msg_list):
         # msg_list[0] == b'|'
@@ -132,7 +227,7 @@ class AsyncRPCServiceProxy(RPCServiceProxyBase):
             raise TypeError("callable or None expected, got %r" % errback)
 
         msg_id, msg_list = self._build_request(method, args, kwargs)
-        self.stream.send_multipart(msg_list)
+        self.socket.send_multipart(msg_list)
 
         # The following logic assumes that the reply won't come back too
         # quickly, otherwise the callbacks won't be in place in time. It should
@@ -149,54 +244,12 @@ class AsyncRPCServiceProxy(RPCServiceProxyBase):
                         etype, evalue, tb = sys.exc_info()
                         eb(etype.__name__, evalue, traceback.format_exc(tb))
         if timeout > 0:
-            dc = DelayedCallback(_abort_request, timeout, self.loop)
+            dc = DelayedCallback(_abort_request, timeout, self.ioloop)
             dc.start()
         else:
             dc = None
 
         self._callbacks[msg_id] = (callback, errback, dc)
-
-
-class RPCServiceProxy(RPCServiceProxyBase):
-    """A synchronous service proxy whose requests will block."""
-
-    def call(self, method, *args, **kwargs):
-        """Call the remote method with *args and **kwargs.
-
-        Parameters
-        ----------
-        method : str
-            The name of the remote method to call.
-        args : tuple
-            The tuple of arguments to pass as `*args` to the RPC method.
-        kwargs : dict
-            The dict of arguments to pass as `**kwargs` to the RPC method.
-
-        Returns
-        -------
-        result : object
-            If the call succeeds, the result of the call will be returned.
-            If the call fails, `RemoteRPCError` will be raised.
-        """
-        if not self._ready:
-            raise RuntimeError('bind or connect must be called first')
-
-        msg_id, msg_list = self._build_request(method, args, kwargs)
-        self.socket.send_multipart(msg_list)
-        msg_list = self.socket.recv_multipart()
-        if not msg_list[0] == b'|':
-            raise RPCError('Unexpected reply message format in RPCServiceProxy._handle_reply')
-        #msg_id = msg_list[1]
-        status = msg_list[2]
-        if status == b'SUCCESS':
-            result = self._serializer.deserialize_result(msg_list[3:])
-            return result
-        elif status == b'FAILURE':
-            error_dict = jsonapi.loads(msg_list[3])
-            raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
-
-    def __getattr__(self, name):
-        return RemoteMethod(self, name)
 
 
 class RemoteMethodBase(object):
@@ -227,13 +280,13 @@ class RemoteRPCError(RPCError):
     ename = None
     evalue = None
     traceback = None
-    
+
     def __init__(self, ename, evalue, tb):
         self.ename = ename
         self.evalue = evalue
         self.traceback = tb
         self.args = (ename, evalue)
-    
+
     def __repr__(self):
         return "<RemoteError:%s(%s)>" % (self.ename, self.evalue)
 
@@ -246,3 +299,4 @@ class RemoteRPCError(RPCError):
 
 class RPCTimeoutError(RPCError):
     pass
+
