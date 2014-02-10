@@ -40,7 +40,7 @@ class Serializer(object):
         return pickle.loads(s)
 
     def dumps(self, o):
-        return pickle.dumps(o)
+        return pickle.dumps(o, protocol=-1)
 
     def serialize_args_kwargs(self, args, kwargs):
         """Serialize args/kwargs into a msg list."""
