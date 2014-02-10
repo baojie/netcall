@@ -3,6 +3,7 @@
 Authors:
 
 * Brian Granger
+* Alexander Glyzov
 """
 
 #-----------------------------------------------------------------------------
@@ -19,42 +20,55 @@ Authors:
 import sys
 import traceback
 
+from abc import ABCMeta, abstractmethod
+
+import gevent
 import zmq
+
+from zmq                     import green
 from zmq.eventloop.zmqstream import ZMQStream
-from zmq.eventloop.ioloop import IOLoop
-from zmq.utils import jsonapi
+from zmq.eventloop.ioloop    import IOLoop
+from zmq.utils               import jsonapi
 
 from .serializer import PickleSerializer
+
+
+def rpc_method(f):
+    """A decorator for use in declaring a method as an rpc method.
+
+    Use as follows::
+
+        @rpc_method
+        def echo(self, s):
+            return s
+    """
+    f.is_rpc_method = True
+    return f
 
 
 #-----------------------------------------------------------------------------
 # RPC Service
 #-----------------------------------------------------------------------------
 
-
 class RPCBase(object):
+    __metaclass__ = ABCMeta
 
-    def __init__(self, loop=None, context=None, serializer=None):
+    def __init__(self, serializer=None):
         """Base class for RPC service and proxy.
 
         Parameters
         ==========
-        loop : IOLoop
-            An existing IOLoop instance, if not passed, then IOLoop.instance()
-            will be used.
-        context : Context
-            An existing Context instance, if not passed, the Context.instance()
-            will be used.
         serializer : Serializer
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        self.loop = loop if loop is not None else IOLoop.instance()
-        self.context = context if context is not None else zmq.Context.instance()
         self.socket = None
-        self.stream = None
         self._serializer = serializer if serializer is not None else PickleSerializer()
         self.reset()
+
+    @abstractmethod
+    def _create_socket(self):
+        pass
 
     #-------------------------------------------------------------------------
     # Public API
@@ -62,7 +76,7 @@ class RPCBase(object):
 
     def reset(self):
         """Reset the socket/stream."""
-        if isinstance(self.socket, zmq.Socket):
+        if isinstance(self.socket, (zmq.Socket, ZMQStream)):
             self.socket.close()
         self._create_socket()
         self.urls = []
@@ -94,7 +108,7 @@ class RPCBase(object):
                     port = self.socket.bind_to_random_port("tcp://%s" % ip)
                 else:
                     self.socket.bind("tcp://%s:%i" % (ip, p))
-                    port = p  
+                    port = p
             except zmq.ZMQError:
                 # bind raises this if the port is not free
                 continue
@@ -114,13 +128,7 @@ class RPCBase(object):
         self.socket.connect(url)
         self.urls.append(url)
 
-class RPCService(RPCBase):
-    """An RPC service that takes requests over a ROUTER socket."""
-
-    def _create_socket(self):
-        self.socket = self.context.socket(zmq.ROUTER)
-        self.stream = ZMQStream(self.socket, self.loop)
-        self.stream.on_recv(self._handle_request)
+class RPCServiceBase(RPCBase):
 
     def _build_reply(self, status, data):
         """Build a reply message for status and data.
@@ -174,7 +182,7 @@ class RPCService(RPCBase):
                 self._send_error()
             else:
                 reply = self._build_reply(b'SUCCESS', data_list)
-                self.stream.send_multipart(reply)
+                self.socket.send_multipart(reply)
 
         self.idents = None
         self.msg_id = None
@@ -189,23 +197,115 @@ class RPCService(RPCBase):
         }
         data_list = [jsonapi.dumps(error_dict)]
         reply = self._build_reply(b'FAILURE', data_list)
-        self.stream.send_multipart(reply)
+        self.socket.send_multipart(reply)
+
+    #-------------------------------------------------------------------------
+    # Public API
+    #-------------------------------------------------------------------------
+
+    @abstractmethod
+    def start(self):
+        """Start the service"""
+        pass
+
+    @abstractmethod
+    def serve(self):
+        """Serve RPC requests"""
+        pass
+
+class TornadoRPCService(RPCServiceBase):
+    """ An asynchronous RPC service that takes requests over a ROUTER socket.
+        Using Tornado compatible IOLoop and ZMQStream from pyzmq.
+    """
+
+    def __init__(self, context=None, ioloop=None, **kwargs):
+        """
+        Parameters
+        ==========
+        ioloop : IOLoop
+            An existing IOLoop instance, if not passed, zmq.IOLoop.instance()
+            will be used.
+        context : Context
+            An existing Context instance, if not passed, zmq.Context.instance()
+            will be used.
+        serializer : Serializer
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+        """
+        assert context is None or isinstance(context, zmq.Context)
+        self.context = context if context is not None else zmq.Context.instance()
+        self.ioloop  = IOLoop.instance() if ioloop is None else ioloop
+        super(TornadoRPCService, self).__init__(**kwargs)
+
+    def _create_socket(self):
+        socket = self.context.socket(zmq.ROUTER)
+        self.socket = ZMQStream(socket, self.ioloop)
+        # register IOLoop callback
+        self.socket.on_recv(self._handle_request)
 
     def start(self):
-        """Start the event loop for this RPC service."""
-        self.loop.start()
+        """ Start the RPC service (non-blocking) """
+        pass  # no-op since IOLoop handler is already registered
 
+    def serve(self):
+        """ Serve RPC requests (blocking) """
+        return self.ioloop.start()
 
-def rpc_method(f):
-    """A decorator for use in declaring a method as an rpc method.
-
-    Use as follows::
-
-        @rpc_method
-        def echo(self, s):
-            return s
+class GeventRPCService(RPCServiceBase):
+    """ An asynchronous RPC service that takes requests over a ROUTER socket.
+        Using Gevent compatibility layer from pyzmq (zmq.green).
     """
-    f.is_rpc_method = True
-    return f
 
+    def __init__(self, context=None, **kwargs):
+        """
+        Parameters
+        ==========
+        context : Context
+            An existing Context instance, if not passed, green.Context.instance()
+            will be used.
+        serializer : Serializer
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+        """
+        assert context is None or isinstance(context, green.Context)
+        self.context  = context if context is not None else green.Context.instance()
+        self.greenlet = None
+        super(GeventRPCService, self).__init__(**kwargs)
+
+    def _create_socket(self):
+        self.socket = self.context.socket(zmq.ROUTER)
+
+    def start(self):
+        """ Start the RPC service (non-blocking).
+
+            Spawns a receive-reply greenlet that serves this socket.
+            Returns spawned greenlet instance.
+        """
+        assert self.urls, 'not bound?'
+        assert self.greenlet is None, 'already started'
+
+        def receive_reply():
+            while True:
+                try:
+                    request = self.socket.recv_multipart()
+                except Exception, e:
+                    print e
+                    break
+                gevent.spawn(self._handle_request, request)
+            self.greenlet = None  # cleanup
+
+        self.greenlet = gevent.spawn(receive_reply)
+        return self.greenlet
+
+    def serve(self, greenlets=[]):
+        """ Serve RPC requests (blocking)
+
+            Waits for specified greenlets or for this greenlet
+        """
+        if greenlets:
+            return gevent.joinall(greenlets)
+        else:
+            if self.greenlet is None:
+                self.start()
+            return self.greenlet.join()
 

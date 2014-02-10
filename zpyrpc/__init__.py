@@ -9,8 +9,8 @@ Example
 
 To create a simple service::
 
-    from zpyrpc import RPCService
-    class Echo(RPCService):
+    from zpyrpc import TornadoRPCService
+    class Echo(TornadoRPCService):
 
         @rpc_method
         def echo(self, s):
@@ -40,10 +40,10 @@ To talk to this service::
 # Imports
 #-----------------------------------------------------------------------------
 
-from .service import RPCService, rpc_method
+from .service import TornadoRPCService, GeventRPCService, rpc_method
 from .proxy import (
     AsyncRPCServiceProxy, RPCServiceProxy,
-    AsyncRemoteMethod, RemoteMethod, 
+    AsyncRemoteMethod, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError
 )
 from .serializer import *
