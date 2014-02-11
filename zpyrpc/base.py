@@ -40,13 +40,14 @@ class RPCBase(object):
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        self.socket = None
+        self.socket      = None
+        self._ready      = False
         self._serializer = serializer if serializer is not None else PickleSerializer()
         self.reset()
 
     @abstractmethod
     def _create_socket(self):
-        pass
+        self._ready = False
 
     #-------------------------------------------------------------------------
     # Public API
@@ -63,6 +64,7 @@ class RPCBase(object):
         """Bind the service to a url of the form proto://ip:port."""
         self.socket.bind(url)
         self.urls.append(url)
+        self._ready = True
 
     def bind_ports(self, ip, ports):
         """Try to bind a socket to the first available tcp port.
@@ -97,12 +99,16 @@ class RPCBase(object):
                 break
         else:
             raise zmq.ZMQBindError('Could not find an available port')
+
         url = 'tcp://%s:%i' % (ip, port)
         self.urls.append(url)
+        self._ready = True
+
         return port
 
     def connect(self, url):
         """Connect the service to a url of the form proto://ip:port."""
         self.socket.connect(url)
         self.urls.append(url)
+        self._ready = True
 

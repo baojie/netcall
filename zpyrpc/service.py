@@ -164,6 +164,7 @@ class TornadoRPCService(RPCServiceBase):
         super(TornadoRPCService, self).__init__(**kwargs)
 
     def _create_socket(self):
+        super(TornadoRPCService, self)._create_socket()
         socket = self.context.socket(zmq.ROUTER)
         self.socket = ZMQStream(socket, self.ioloop)
         # register IOLoop callback
@@ -199,6 +200,7 @@ class GeventRPCService(RPCServiceBase):
         super(GeventRPCService, self).__init__(**kwargs)
 
     def _create_socket(self):
+        super(GeventRPCService, self)._create_socket()
         self.socket = self.context.socket(zmq.ROUTER)
 
     def start(self):
