@@ -1,23 +1,25 @@
-# ZPyRPC = "Zippy RPC"
+# ZPyRPC = "Zippy RPC" (a fork adding Gevent support)
 
 Fast and simple Python RPC based on ZeroMQ and Tornado/Gevent
 
 ## Overview
 
 This library provides a small robust RPC system for Python
-code using ZeroMQ and Tornado/Gevent. It was originally designed
-in the context of IPython, but we eventually spun it out into its
-own project.
+code using [ZeroMQ](http://zeromq.org/) and
+[Tornado](http://www.tornadoweb.org/)/[Gevent](http://www.gevent.org/).
+It was originally designed in the context of
+[IPython](http://ipython.org/), but eventually
+has been spun out into its own project.
 
 Some of the nice features:
 
 * Fast and simple.
 * Round robin load balance requests to multiple services.
-* Route requests using all of the glory of ZeroMQ.
-* Both synchronous and asynchronous clients (both Gevent and Tornado).
+* Route requests using all of the glory of [ZeroMQ](http://zeromq.org/tutorials:dealer-and-router).
+* Both synchronous and asynchronous clients (Tornado or Gevent).
 * Set a timeout on RPC calls.
 * Run multple services in a single process.
-* Pluggable serialization (default is Pickle, JSON and MessagePack are included).
+* Pluggable serialization (Pickle [default], JSON, [MessagePack](http://msgpack.org/)).
 
 ## Example
 
@@ -33,15 +35,17 @@ class Echo(TornadoRPCService):
 
 echo = Echo()
 echo.bind('tcp://127.0.0.1:5555')
-IOLoop.instance().start()
+echo.bind('ipc:///tmp/echo.service')  # multiple endpoints
+echo.serve()
 ```
 
 To talk to this service::
 
 ```python
-from zpyrpc import SyncRPCClient
-p = SyncRPCClient()
+from zpyrpc import GeventRPCClient
+p = GeventRPCClient()
 p.connect('tcp://127.0.0.1:5555')
+p.connect('ipc:///tmp/echo.service')  # auto load balancing
 p.echo('Hi there')
 'Hi there'
 ```
