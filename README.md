@@ -56,3 +56,7 @@ p.echo('Hi there')
 
 See other [examples](https://github.com/aglyzov/zpyrpc/tree/master/examples).
 
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/aglyzov/zpyrpc/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
