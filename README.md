@@ -26,9 +26,9 @@ Some of the nice features:
 To create a simple service:
 
 ```python
-from zpyrpc import TornadoRPCService
-class Echo(TornadoRPCService):
+from zpyrpc import TornadoRPCService, rpc_method
 
+class Echo(TornadoRPCService):
     @rpc_method
     def echo(self, s):
         return s
@@ -43,6 +43,7 @@ To talk to this service::
 
 ```python
 from zpyrpc import GeventRPCClient
+
 p = GeventRPCClient()
 p.connect('tcp://127.0.0.1:5555')
 p.connect('ipc:///tmp/echo.service')  # auto load balancing
