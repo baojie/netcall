@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-"""A simple RPC server that show how to run multiple RPC services."""
+""" A simple RPC server that shows how to run multiple RPC services
+    asynchronously using Gevent cooperative multitasking
+"""
 
 #-----------------------------------------------------------------------------
 #  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
@@ -11,9 +13,9 @@
 #-----------------------------------------------------------------------------
 
 
-from gevent import joinall, sleep as gevent_sleep
+from gevent       import joinall, sleep as gevent_sleep
 
-from zpyrpc import GeventRPCService, rpc_method, JSONSerializer
+from zpyrpc.green import GeventRPCService, rpc_method, JSONSerializer
 
 
 class Echo(GeventRPCService):

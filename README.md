@@ -45,7 +45,7 @@ echo.serve()
 To talk to this service::
 
 ```python
-from zpyrpc import GeventRPCClient
+from zpyrpc.green import GeventRPCClient
 
 p = GeventRPCClient()
 p.connect('tcp://127.0.0.1:5555')
