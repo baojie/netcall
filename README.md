@@ -53,3 +53,5 @@ p.echo('Hi there')
 'Hi there'
 ```
 
+See other [examples](https://github.com/aglyzov/zpyrpc/tree/master/examples).
+
