@@ -11,8 +11,8 @@
 #-----------------------------------------------------------------------------
 
 
-import time
-from gevent import joinall
+from gevent import joinall, sleep as gevent_sleep
+
 from zpyrpc import GeventRPCService, rpc_method, JSONSerializer
 
 
@@ -25,7 +25,8 @@ class Echo(GeventRPCService):
 
     @rpc_method
     def sleep(self, t):
-        time.sleep(t)
+        print "%r sleep %s" % (self.urls, t)
+        gevent_sleep(t)
 
     @rpc_method
     def error(self):
