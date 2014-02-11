@@ -1,5 +1,6 @@
 # ZPyRPC = "Zippy RPC" (fork)
-(this fork adds Gevent support, refactors code and makes some API changes)
+Notice this code was forked from [original ZPyRPC](https://github.com/ellisonbg/zpyrpc) in Feb 2014.
+The fork adds Gevent support, refactors code and makes some incompatible API changes.
 
 Fast and simple Python RPC based on ZeroMQ and Tornado/Gevent
 
