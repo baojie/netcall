@@ -10,12 +10,14 @@
 #  the file COPYING.BSD, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from gevent import spawn
+from gevent import spawn, joinall
 from zpyrpc import GeventRPCServiceProxy, RemoteRPCError, JSONSerializer
 
-def printer(func, *args):
-    "run function, print results"
-    print func(*args)
+def printer(msg, func, *args):
+    "run a function, print results"
+    print msg, '<request>'
+    res = func(*args)
+    print msg, '<response>', res
 
 if __name__ == '__main__':
     # Custom serializer/deserializer functions can be passed in. The server
@@ -23,7 +25,7 @@ if __name__ == '__main__':
     echo = GeventRPCServiceProxy(serializer=JSONSerializer())
     echo.connect('tcp://127.0.0.1:5555')
 
-    print "Echoing: ", echo.echo("Hi there")
+    tasks = [spawn(printer, "[echo] Echoing \"Hi there\"", echo.echo, "Hi there")]
     try:
         echo.error()
     except RemoteRPCError, e:
@@ -32,17 +34,17 @@ if __name__ == '__main__':
         print e.evalue
         print e.traceback
 
-    print "Sleeping..."
-    print echo.sleep(2.0)
+    tasks.append(spawn(printer, "[echo] Sleeping for 2 seconds...", echo.sleep, 2.0))
 
     math = GeventRPCServiceProxy()
     # By connecting to two instances, requests are load balanced.
     math.connect('tcp://127.0.0.1:5556')
     math.connect('tcp://127.0.0.1:5557')
 
-    def adder():
-        for i in range(5):
-            for j in range(5):
-                print "Adding: ", i, j, math.add(i, j)
+    for i in range(5):
+        for j in range(5):
+            tasks.append(
+                spawn(printer, "[math] Adding: %s + %s" % (i, j), math.add, i, j)
+            )
 
-    spawn(adder).join()
+    joinall(tasks)
