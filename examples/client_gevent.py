@@ -11,7 +11,7 @@
 #-----------------------------------------------------------------------------
 
 from gevent import spawn, joinall
-from zpyrpc import GeventRPCServiceProxy, RemoteRPCError, JSONSerializer
+from zpyrpc import GeventRPCClient, RemoteRPCError, JSONSerializer
 
 def printer(msg, func, *args):
     "run a function, print results"
@@ -22,7 +22,7 @@ def printer(msg, func, *args):
 if __name__ == '__main__':
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
-    echo = GeventRPCServiceProxy(serializer=JSONSerializer())
+    echo = GeventRPCClient(serializer=JSONSerializer())
     echo.connect('tcp://127.0.0.1:5555')
 
     tasks = [spawn(printer, "[echo] Echoing \"Hi there\"", echo.echo, "Hi there")]
@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     tasks.append(spawn(printer, "[echo] Sleeping for 2 seconds...", echo.sleep, 2.0))
 
-    math = GeventRPCServiceProxy()
+    math = GeventRPCClient()
     # By connecting to two instances, requests are load balanced.
     math.connect('tcp://127.0.0.1:5556')
     math.connect('tcp://127.0.0.1:5557')

@@ -10,13 +10,13 @@
 #  the file COPYING.BSD, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from zpyrpc import SyncRPCServiceProxy, RemoteRPCError, JSONSerializer
+from zpyrpc import SyncRPCClient, RemoteRPCError, JSONSerializer
 
 
 if __name__ == '__main__':
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
-    echo = SyncRPCServiceProxy(serializer=JSONSerializer())
+    echo = SyncRPCClient(serializer=JSONSerializer())
     echo.connect('tcp://127.0.0.1:5555')
     print "Echoing: ", echo.echo("Hi there")
     try:
@@ -27,7 +27,7 @@ if __name__ == '__main__':
         print e.evalue
         print e.traceback
 
-    math = SyncRPCServiceProxy()
+    math = SyncRPCClient()
     # By connecting to two instances, requests are load balanced.
     math.connect('tcp://127.0.0.1:5556')
     math.connect('tcp://127.0.0.1:5557')

@@ -38,7 +38,7 @@ from .base import RPCBase
 # RPC Service Proxy
 #-----------------------------------------------------------------------------
 
-class RPCServiceProxyBase(RPCBase):
+class RPCClientBase(RPCBase):
     """A service proxy to for talking to an RPCService."""
 
     def _create_socket(self):
@@ -57,7 +57,7 @@ class RPCServiceProxyBase(RPCBase):
         return RemoteMethod(self, name)
 
 
-class SyncRPCServiceProxy(RPCServiceProxyBase):
+class SyncRPCClient(RPCClientBase):
     """A synchronous service proxy whose requests will block."""
 
     def __init__(self, context=None, **kwargs):
@@ -73,7 +73,7 @@ class SyncRPCServiceProxy(RPCServiceProxyBase):
         """
         assert context is None or isinstance(context, zmq.Context)
         self.context = context if context is not None else zmq.Context.instance()
-        super(SyncRPCServiceProxy, self).__init__(**kwargs)
+        super(SyncRPCClient, self).__init__(**kwargs)
 
     def call(self, method, *args, **kwargs):
         """Call the remote method with *args and **kwargs.
@@ -102,7 +102,7 @@ class SyncRPCServiceProxy(RPCServiceProxyBase):
         msg_list = self.socket.recv_multipart()
 
         if not msg_list[0] == b'|':
-            raise RPCError('Unexpected reply message format in RPCServiceProxy._handle_reply')
+            raise RPCError('Unexpected reply message format in RPCClient._handle_reply')
 
         #msg_id = msg_list[1]
         status = msg_list[2]
@@ -115,7 +115,7 @@ class SyncRPCServiceProxy(RPCServiceProxyBase):
             raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
 
 
-class GeventRPCServiceProxy(RPCServiceProxyBase):
+class GeventRPCClient(RPCClientBase):
     """ An asynchronous service proxy whose requests will not block.
         Uses the Gevent compatibility layer of pyzmq (zmq.green).
     """
@@ -137,23 +137,23 @@ class GeventRPCServiceProxy(RPCServiceProxyBase):
         self._exit_ev  = Event()
         self.greenlet  = spawn(self._reader)
         self._results  = {}    # {<msg-id> : <gevent.AsyncResult>}
-        super(GeventRPCServiceProxy, self).__init__(**kwargs)  # base class
+        super(GeventRPCClient, self).__init__(**kwargs)  # base class
 
     def _create_socket(self):
-        super(GeventRPCServiceProxy, self)._create_socket()
+        super(GeventRPCClient, self)._create_socket()
 
     def bind(self, url):
-        result = super(GeventRPCServiceProxy, self).bind(url)
+        result = super(GeventRPCClient, self).bind(url)
         self._ready_ev.set()  # wake up _reader
         return result
 
     def bind_ports(self, *args, **kwargs):
-        result = super(GeventRPCServiceProxy, self).bind_ports(*args, **kwargs)
+        result = super(GeventRPCClient, self).bind_ports(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
 
     def connect(self, url):
-        result = super(GeventRPCServiceProxy, self).connect(url)
+        result = super(GeventRPCClient, self).connect(url)
         self._ready_ev.set()  # wake up _reader
         return result
 
@@ -184,7 +184,7 @@ class GeventRPCServiceProxy(RPCServiceProxyBase):
                     break
 
                 if not msg_list[0] == b'|':
-                    err_msg = 'Unexpected reply message format in GeventRPCServiceProxy._reader'
+                    err_msg = 'Unexpected reply message format in GeventRPCClient._reader'
                     print err_msg
                     raise RPCError(err_msg)
 
@@ -242,7 +242,7 @@ class GeventRPCServiceProxy(RPCServiceProxyBase):
             raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
 
 
-class TornadoRPCServiceProxy(RPCServiceProxyBase):
+class TornadoRPCClient(RPCClientBase):
     """An asynchronous service proxy (based on Tornado IOLoop)"""
 
     def __init__(self, context=None, ioloop=None, **kwargs):
@@ -263,17 +263,17 @@ class TornadoRPCServiceProxy(RPCServiceProxyBase):
         self.context    = context if context is not None else zmq.Context.instance()
         self.ioloop     = IOLoop.instance() if ioloop is None else ioloop
         self._callbacks = {}
-        super(TornadoRPCServiceProxy, self).__init__(**kwargs)
+        super(TornadoRPCClient, self).__init__(**kwargs)
 
     def _create_socket(self):
-        super(TornadoRPCServiceProxy, self)._create_socket()
+        super(TornadoRPCClient, self)._create_socket()
         self.socket = ZMQStream(self.socket, self.ioloop)
         self.socket.on_recv(self._handle_reply)
 
     def _handle_reply(self, msg_list):
         # msg_list[0] == b'|'
         if not msg_list[0] == b'|':
-            logging.error('Unexpected reply message format in AsyncRPCServiceProxy._handle_reply')
+            logging.error('Unexpected reply message format in TornadoRPCClient._handle_reply')
             return
         msg_id = msg_list[1]
         status = msg_list[2]

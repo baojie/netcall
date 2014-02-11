@@ -10,7 +10,7 @@
 #  the file COPYING.BSD, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from zpyrpc import TornadoRPCServiceProxy, JSONSerializer
+from zpyrpc import TornadoRPCClient, JSONSerializer
 from zmq.eventloop import ioloop
 
 def print_result(r):
@@ -23,7 +23,7 @@ def print_error(ename, evalue, tb):
 if __name__ == '__main__':
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
-    echo = TornadoRPCServiceProxy(serializer=JSONSerializer())
+    echo = TornadoRPCClient(serializer=JSONSerializer())
     echo.connect('tcp://127.0.0.1:5555')
     echo.echo(print_result, print_error, 0, "Hi there")
 
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     # Sleep for 2.0s but timeout after 1000ms.
     echo.sleep(print_result, print_error, 1000, 2.0)
 
-    math = TornadoRPCServiceProxy()
+    math = TornadoRPCClient()
     # By connecting to two instances, requests are load balanced.
     math.connect('tcp://127.0.0.1:5556')
     math.connect('tcp://127.0.0.1:5557')

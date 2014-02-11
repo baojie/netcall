@@ -23,8 +23,8 @@ To create a simple service::
 
 To talk to this service::
 
-    from zpyrpc import SyncRPCServiceProxy
-    p = SyncRPCServiceProxy()
+    from zpyrpc import SyncRPCClient
+    p = SyncRPCClient()
     p.connect('tcp://127.0.0.1:5555')
     p.echo('Hi there')
     'Hi there'
@@ -43,7 +43,7 @@ To talk to this service::
 
 from .service import TornadoRPCService, GeventRPCService, rpc_method
 from .proxy import (
-    SyncRPCServiceProxy, GeventRPCServiceProxy, TornadoRPCServiceProxy,
+    SyncRPCClient, GeventRPCClient, TornadoRPCClient,
     AsyncRemoteMethod, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError
 )
