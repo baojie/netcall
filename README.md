@@ -1,28 +1,29 @@
 # ZPyRPC = "Zippy RPC"
 
-Zippy fast and simple RPC based on ZeroMQ and Python
+Fast and simple Python RPC based on ZeroMQ and Tornado/Gevent
 
 ## Overview
 
-This library provides a simple, but fast and robust RPC library for
-ZeroMQ. It was originally designed in the context of IPython, but
-we eventually spun it out into its own project.
+This library provides a small robust RPC system for Python
+code using ZeroMQ and Tornado/Gevent. It was originally designed
+in the context of IPython, but we eventually spun it out into its
+own project.
 
 Some of the nice features:
 
-* Round robin load balance requests to multiple services.
-* Set a timeout on RPC calls.
-* Route requests using all of the glory of ZeroMQ.
 * Fast and simple.
-* Both synchronous and asynchronous clients/proxies (both Gevent and Tornado).
+* Round robin load balance requests to multiple services.
+* Route requests using all of the glory of ZeroMQ.
+* Both synchronous and asynchronous clients (both Gevent and Tornado).
+* Set a timeout on RPC calls.
 * Run multple services in a single process.
-* Pluggable serialization (default is pickle, json included).
+* Pluggable serialization (default is Pickle, JSON and MessagePack are included).
 
 ## Example
 
 To create a simple service:
 
-```
+```python
 from zpyrpc import TornadoRPCService
 class Echo(TornadoRPCService):
 
@@ -37,9 +38,9 @@ IOLoop.instance().start()
 
 To talk to this service::
 
-```
-from zpyrpc import RPCServiceProxy
-p = RPCServiceProxy()
+```python
+from zpyrpc import SyncRPCClient
+p = SyncRPCClient()
 p.connect('tcp://127.0.0.1:5555')
 p.echo('Hi there')
 'Hi there'
