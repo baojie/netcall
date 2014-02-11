@@ -1,4 +1,5 @@
-# ZPyRPC = "Zippy RPC" (a fork adding Gevent support)
+# ZPyRPC = "Zippy RPC" (fork)
+(this fork adds Gevent support, refactors code and makes some API changes)
 
 Fast and simple Python RPC based on ZeroMQ and Tornado/Gevent
 
@@ -36,6 +37,7 @@ class Echo(TornadoRPCService):
 echo = Echo()
 echo.bind('tcp://127.0.0.1:5555')
 echo.bind('ipc:///tmp/echo.service')  # multiple endpoints
+echo.start()
 echo.serve()
 ```
 

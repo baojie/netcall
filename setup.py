@@ -12,6 +12,6 @@ setup(
     description = "Zippy fast and simple Python RPC based on ZeroMQ and Tornado/Gevent",
     license = "Modified BSD",
     keywords = "ZeroMQ Tornado Gevent PyZMQ",
-    url = "http://github.com/ellisonbg/zpyrpc",
+    url = "http://github.com/aglyzov/zpyrpc",
 )
 
