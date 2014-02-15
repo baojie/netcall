@@ -1,18 +1,19 @@
-# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=indent
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-""" Gevent version of the RPC client
+"""
+Gevent version of the RPC client
 
 Authors:
 
 * Brian Granger
 * Alexander Glyzov
-"""
 
+"""
 #-----------------------------------------------------------------------------
-#  Copyright (C) 2012. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
+#  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------

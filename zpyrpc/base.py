@@ -1,15 +1,18 @@
-"""A base class for RPC services and proxies.
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
+"""
+A base class for RPC services and proxies.
 
 Authors:
 
 * Brian Granger
-"""
+* Alexander Glyzov
 
+"""
 #-----------------------------------------------------------------------------
 #  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -31,7 +34,7 @@ from .serializer import PickleSerializer
 class RPCBase(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, serializer=None):
+    def __init__(self, serializer=None):  #{
         """Base class for RPC service and proxy.
 
         Parameters
@@ -44,29 +47,30 @@ class RPCBase(object):
         self._ready      = False
         self._serializer = serializer if serializer is not None else PickleSerializer()
         self.reset()
-
+    #}
     @abstractmethod
-    def _create_socket(self):
+    def _create_socket(self):  #{
         self._ready = False
+    #}
 
     #-------------------------------------------------------------------------
     # Public API
     #-------------------------------------------------------------------------
 
-    def reset(self):
+    def reset(self):  #{
         """Reset the socket/stream."""
         if isinstance(self.socket, (zmq.Socket, ZMQStream)):
             self.socket.close()
         self._create_socket()
         self.urls = []
-
-    def bind(self, url):
+    #}
+    def bind(self, url):  #{
         """Bind the service to a url of the form proto://ip:port."""
         self.socket.bind(url)
         self.urls.append(url)
         self._ready = True
-
-    def bind_ports(self, ip, ports):
+    #}
+    def bind_ports(self, ip, ports):  #{
         """Try to bind a socket to the first available tcp port.
 
         The ports argument can either be an integer valued port
@@ -105,10 +109,10 @@ class RPCBase(object):
         self._ready = True
 
         return port
-
-    def connect(self, url):
+    #}
+    def connect(self, url):  #{
         """Connect the service to a url of the form proto://ip:port."""
         self.socket.connect(url)
         self.urls.append(url)
         self._ready = True
-
+    #}

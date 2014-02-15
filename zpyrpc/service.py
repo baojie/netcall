@@ -1,6 +1,7 @@
-# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=indent
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-"""A PyZMQ based RPC service.
+"""
+An RPC service using ZeroMQ as a transport.
 
 Authors:
 
@@ -12,7 +13,7 @@ Authors:
 #  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -37,7 +38,7 @@ from .base import RPCBase
 # RPC utilities
 #-----------------------------------------------------------------------------
 
-def rpc_method(f):
+def rpc_method(f):  #{
     """A decorator for use in declaring a method as an rpc method.
 
     Use as follows::
@@ -48,15 +49,15 @@ def rpc_method(f):
     """
     f.is_rpc_method = True
     return f
-
+#}
 
 #-----------------------------------------------------------------------------
 # RPC Service
 #-----------------------------------------------------------------------------
 
-class RPCServiceBase(RPCBase):
+class RPCServiceBase(RPCBase):  #{
 
-    def _build_reply(self, status, data):
+    def _build_reply(self, status, data):  #{
         """Build a reply message for status and data.
 
         Parameters
@@ -71,8 +72,8 @@ class RPCServiceBase(RPCBase):
         reply.extend([b'|', self.msg_id, status])
         reply.extend(data)
         return reply
-
-    def _handle_request(self, msg_list):
+    #}
+    def _handle_request(self, msg_list):  #{
         """Handle an incoming request.
 
         The request is received as a multipart message:
@@ -112,8 +113,8 @@ class RPCServiceBase(RPCBase):
 
         self.idents = None
         self.msg_id = None
-
-    def _send_error(self):
+    #}
+    def _send_error(self):  #{
         """Send an error reply."""
         etype, evalue, tb = sys.exc_info()
         error_dict = {
@@ -124,6 +125,7 @@ class RPCServiceBase(RPCBase):
         data_list = [jsonapi.dumps(error_dict)]
         reply = self._build_reply(b'FAILURE', data_list)
         self.socket.send_multipart(reply)
+    #}
 
     #-------------------------------------------------------------------------
     # Public API
@@ -135,16 +137,24 @@ class RPCServiceBase(RPCBase):
         pass
 
     @abstractmethod
-    def serve(self):
-        """Serve RPC requests"""
+    def stop(self):  #{
+        """ Stop the service (non-blocking) """
         pass
+    #}
 
-class TornadoRPCService(RPCServiceBase):
+    @abstractmethod
+    def serve(self):  #{
+        """ Serve RPC requests (blocking) """
+        pass
+    #}
+#}
+
+class TornadoRPCService(RPCServiceBase):  #{
     """ An asynchronous RPC service that takes requests over a ROUTER socket.
-        Using Tornado compatible IOLoop and ZMQStream from pyzmq.
+        Using Tornado compatible IOLoop and ZMQStream from PyZMQ.
     """
 
-    def __init__(self, context=None, ioloop=None, **kwargs):
+    def __init__(self, context=None, ioloop=None, **kwargs):  #{
         """
         Parameters
         ==========
@@ -162,8 +172,8 @@ class TornadoRPCService(RPCServiceBase):
         self.context = context if context is not None else zmq.Context.instance()
         self.ioloop  = IOLoop.instance() if ioloop is None else ioloop
         super(TornadoRPCService, self).__init__(**kwargs)
-
-    def _create_socket(self):
+    #}
+    def _create_socket(self):  #{
         super(TornadoRPCService, self)._create_socket()
         socket = self.context.socket(zmq.ROUTER)
         self.socket = ZMQStream(socket, self.ioloop)
@@ -177,4 +187,5 @@ class TornadoRPCService(RPCServiceBase):
     def serve(self):
         """ Serve RPC requests (blocking) """
         return self.ioloop.start()
-
+    #}
+#}

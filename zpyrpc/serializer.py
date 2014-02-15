@@ -1,15 +1,16 @@
-"""Serialization classes for ZPyRPC.
+"""
+Serialization classes for ZPyRPC.
 
 Authors:
 
 * Brian Granger
-"""
 
+"""
 #-----------------------------------------------------------------------------
 #  Copyright (C) 2013 Brian Granger, Min Ragan-Kelley
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -28,10 +29,10 @@ try:
 except ImportError:
     msgpack = None
 
+
 #-----------------------------------------------------------------------------
 # Serializer
 #-----------------------------------------------------------------------------
-
 
 class Serializer(object):
     """A class for serializing/deserializing objects."""
@@ -70,14 +71,15 @@ class JSONSerializer(Serializer):
         return jsonapi.dumps(o)
 
 class MsgPackSerializer(Serializer):
-    
+
     def loads(self, s):
         return msgpack.unpackb(s)
-    
+
     def dumps(self, o):
         return msgpack.packb(o)
 
-__all__ = [ 
+
+__all__ = [
     'Serializer',
     'PickleSerializer',
     'JSONSerializer',

@@ -1,6 +1,7 @@
-# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=indent
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-""" Gevent version of the RPC service
+"""
+Gevent version of the RPC service
 
 Authors:
 
@@ -12,7 +13,7 @@ Authors:
 #  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
@@ -28,32 +29,14 @@ from ..service import RPCServiceBase
 
 
 #-----------------------------------------------------------------------------
-# RPC utilities
-#-----------------------------------------------------------------------------
-
-def rpc_method(f):
-    """A decorator for use in declaring a method as an rpc method.
-
-    Use as follows::
-
-        @rpc_method
-        def echo(self, s):
-            return s
-    """
-    f.is_rpc_method = True
-    return f
-
-
-#-----------------------------------------------------------------------------
 # RPC Service
 #-----------------------------------------------------------------------------
 
 class GeventRPCService(RPCServiceBase):
     """ An asynchronous RPC service that takes requests over a ROUTER socket.
-        Using Gevent compatibility layer from pyzmq (zmq.green).
+        Using Gevent compatibility layer from PyZMQ (zmq.green).
     """
-
-    def __init__(self, context=None, **kwargs):
+    def __init__(self, context=None, **kwargs):  #{
         """
         Parameters
         ==========
@@ -68,12 +51,12 @@ class GeventRPCService(RPCServiceBase):
         self.context  = context if context is not None else green.Context.instance()
         self.greenlet = None
         super(GeventRPCService, self).__init__(**kwargs)
-
-    def _create_socket(self):
+    #}
+    def _create_socket(self):  #{
         super(GeventRPCService, self)._create_socket()
         self.socket = self.context.socket(zmq.ROUTER)
-
-    def start(self):
+    #}
+    def start(self):  #{
         """ Start the RPC service (non-blocking).
 
             Spawns a receive-reply greenlet that serves this socket.
@@ -106,4 +89,5 @@ class GeventRPCService(RPCServiceBase):
             if self.greenlet is None:
                 self.start()
             return self.greenlet.join()
+    #}
 
