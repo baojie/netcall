@@ -77,8 +77,12 @@ class GeventRPCService(RPCServiceBase):
 
         self.greenlet = gevent.spawn(receive_reply)
         return self.greenlet
-
-    def serve(self, greenlets=[]):
+    #}
+    def stop(self):  #{
+        """ Stop the RPC service (non-blocking) """
+        raise NotImplementedError("TODO: signal greenlet to quit")
+    #}
+    def serve(self, greenlets=[]):  #{
         """ Serve RPC requests (blocking)
 
             Waits for specified greenlets or for this greenlet

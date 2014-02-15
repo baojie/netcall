@@ -63,14 +63,17 @@ if __name__ == '__main__':
     # side ones must match.
     echo = Echo(serializer=JSONSerializer())
     echo.bind('tcp://127.0.0.1:5555')
+    echo.start()
 
     # We create two Math services to simulate load balancing. A client can
     # connect to both of these services and requests will be load balanced.
     math1 = Math()
     math1.bind('tcp://127.0.0.1:5556')
+    math1.start()
 
     math2 = Math()
     math2.bind('tcp://127.0.0.1:5557')
+    math2.start()
 
     echo.serve()  # this calls echo.ioloop.start() and since ioloop is
                   # the same for all services they all will be served

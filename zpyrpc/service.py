@@ -132,9 +132,10 @@ class RPCServiceBase(RPCBase):  #{
     #-------------------------------------------------------------------------
 
     @abstractmethod
-    def start(self):
-        """Start the service"""
+    def start(self):  #{
+        """ Start the service (non-blocking) """
         pass
+    #}
 
     @abstractmethod
     def stop(self):  #{
@@ -171,21 +172,31 @@ class TornadoRPCService(RPCServiceBase):  #{
         assert context is None or isinstance(context, zmq.Context)
         self.context = context if context is not None else zmq.Context.instance()
         self.ioloop  = IOLoop.instance() if ioloop is None else ioloop
+        self._is_started = False
         super(TornadoRPCService, self).__init__(**kwargs)
     #}
     def _create_socket(self):  #{
         super(TornadoRPCService, self)._create_socket()
         socket = self.context.socket(zmq.ROUTER)
         self.socket = ZMQStream(socket, self.ioloop)
-        # register IOLoop callback
-        self.socket.on_recv(self._handle_request)
-
-    def start(self):
+    #}
+    def start(self):  #{
         """ Start the RPC service (non-blocking) """
-        pass  # no-op since IOLoop handler is already registered
-
-    def serve(self):
+        assert self._is_started == False, "already started"
+        # register IOLoop callback
+        self._is_started = True
+        self.socket.on_recv(self._handle_request)
+    #}
+    def stop(self):  #{
+        """ Stop the RPC service (non-blocking) """
+        # register IOLoop callback
+        self.socket.stop_on_recv()
+        self._is_started = False
+    #}
+    def serve(self):  #{
         """ Serve RPC requests (blocking) """
+        if not self._is_started:
+            self.start()
         return self.ioloop.start()
     #}
 #}
