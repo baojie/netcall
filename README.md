@@ -14,7 +14,7 @@ and added new examples.
 * Simple hackable code
 * Really easy API
 * Auto load balancing of multiple services (thanks to ZeroMQ)
-* Full [ZeroMQ routing](http://zeromq.org/tutorials:dealer-and-router) routing as a bonus
+* Full [ZeroMQ routing](http://zeromq.org/tutorials:dealer-and-router) as a bonus
 * Asynchronous servers (IOLoop or Gevent)
 * Both synchronous and asynchronous clients (IOLoop or Gevent)
 * Ability to set a timeout on RPC calls
