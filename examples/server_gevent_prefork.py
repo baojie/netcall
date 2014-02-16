@@ -24,43 +24,36 @@ from os              import getpid
 from multiprocessing import Process, cpu_count
 
 from zmq          import green, ROUTER, DEALER, QUEUE
-from zpyrpc.green import GeventRPCService, rpc_method, JSONSerializer
+from zpyrpc.green import GeventRPCService, JSONSerializer
 
 
 class EchoService(GeventRPCService):
 
-    @rpc_method
     def echo(self, s):
         print "<pid:%s> %r echo %r" % (getpid(), self.urls, s)
         return s
 
-    @rpc_method
     def sleep(self, t):
         print "<pid:%s> %r sleep %s" % (getpid(), self.urls, t)
         gevent_sleep(t)
 
-    @rpc_method
     def error(self):
         raise ValueError('raising ValueError for fun!')
 
 class MathService(GeventRPCService):
 
-    @rpc_method
     def add(self, a, b):
         print "<pid:%s> %r add %r %r" % (getpid(), self.urls, a, b)
         return a+b
 
-    @rpc_method
     def subtract(self, a, b):
         print "<pid:%s> %r subtract %r %r" % (getpid(), self.urls, a, b)
         return a-b
 
-    @rpc_method
     def multiply(self, a, b):
         print "<pid:%s> %r multiply %r %r" % (getpid(), self.urls, a, b)
         return a*b
 
-    @rpc_method
     def divide(self, a, b):
         print "<pid:%s> %r divide %r %r" % (getpid(), self.urls, a, b)
         return a/b

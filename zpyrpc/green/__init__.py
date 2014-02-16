@@ -11,11 +11,12 @@ Example
 To create a simple service::
 
     from zpyrpc.green import GeventRPCService
-    class Echo(GeventRPCService):
 
-        @rpc_method
-        def echo(self, s):
-            return s
+    echo = GeventRPCService()
+
+    @echo.task
+    def echo(self, s):
+        return s
 
     echo = Echo()
     echo.bind('tcp://127.0.0.1:5555')
@@ -25,6 +26,7 @@ To create a simple service::
 To talk to this service::
 
     from zpyrpc.green import GeventRPCClient
+
     p = GeventRPCClient()
     p.connect('tcp://127.0.0.1:5555')
     p.echo('Hi there')
@@ -35,14 +37,14 @@ To talk to this service::
 #  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
 # Imports
 #-----------------------------------------------------------------------------
 
-from ..service import TornadoRPCService, rpc_method
+from ..service import TornadoRPCService
 from ..client  import (
     SyncRPCClient, TornadoRPCClient,
     AsyncRemoteMethod, RemoteMethod,

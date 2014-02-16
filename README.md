@@ -28,14 +28,14 @@ Some of the nice features:
 To create a simple service:
 
 ```python
-from zpyrpc import TornadoRPCService, rpc_method
+from zpyrpc import TornadoRPCService
 
-class Echo(TornadoRPCService):
-    @rpc_method
-    def echo(self, s):
-        return s
+echo = TornadoRPCService()
 
-echo = Echo()
+@echo.task
+def echo(self, s):
+    return s
+
 echo.bind('tcp://127.0.0.1:5555')
 echo.bind('ipc:///tmp/echo.service')  # multiple endpoints
 echo.start()

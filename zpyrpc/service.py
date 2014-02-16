@@ -23,7 +23,8 @@ Authors:
 import sys
 import traceback
 
-from abc import abstractmethod
+from functools import partial
+from abc       import abstractmethod
 
 import zmq
 
@@ -35,28 +36,26 @@ from .base import RPCBase
 
 
 #-----------------------------------------------------------------------------
-# RPC utilities
-#-----------------------------------------------------------------------------
-
-def rpc_method(f):  #{
-    """A decorator for use in declaring a method as an rpc method.
-
-    Use as follows::
-
-        @rpc_method
-        def echo(self, s):
-            return s
-    """
-    f.is_rpc_method = True
-    return f
-#}
-
-#-----------------------------------------------------------------------------
 # RPC Service
 #-----------------------------------------------------------------------------
 
 class RPCServiceBase(RPCBase):  #{
 
+    _RESERVED = ['registser','proc','task','start','stop','serve']
+
+    def __init__(self, *args, **kwargs):  #{
+        super(RPCServiceBase, self).__init__(*args, **kwargs)
+        self.procedures = {}  # {<name> : <callable>}
+
+        # register extra class methods as service procedures
+        for name in dir(self):
+            if name.startswith('_') or name in self._RESERVED:
+                continue
+            try:    proc = getattr(self, name)
+            except: continue
+            if callable(proc):
+                self.procedures[name] = proc
+    #}
     def _build_reply(self, status, data):  #{
         """Build a reply message for status and data.
 
@@ -72,6 +71,18 @@ class RPCServiceBase(RPCBase):  #{
         reply.extend([b'|', self.msg_id, status])
         reply.extend(data)
         return reply
+    #}
+    def _send_error(self):  #{
+        """Send an error reply."""
+        etype, evalue, tb = sys.exc_info()
+        error_dict = {
+            'ename' : str(etype.__name__),
+            'evalue' : str(evalue),
+            'traceback' : traceback.format_exc(tb)
+        }
+        data_list = [jsonapi.dumps(error_dict)]
+        reply = self._build_reply(b'FAILURE', data_list)
+        self.socket.send_multipart(reply)
     #}
     def _handle_request(self, msg_list):  #{
         """Handle an incoming request.
@@ -90,46 +101,63 @@ class RPCServiceBase(RPCBase):  #{
         i = msg_list.index(b'|')
         self.idents = msg_list[0:i]
         self.msg_id = msg_list[i+1]
-        method = msg_list[i+2]
+        name = msg_list[i+2]
         data = msg_list[i+3:]
         args, kwargs = self._serializer.deserialize_args_kwargs(data)
 
         # Find and call the actual handler for message.
         try:
-            handler = getattr(self, method, None)
-            if handler is None or not getattr(handler, 'is_rpc_method', False):
-                raise NotImplementedError("Unknown RPC method %r" % method)
-            result = handler(*args, **kwargs)
+            proc = self.procedures.get(name, None)
+            if proc is None:
+                raise NotImplementedError("Unregistered procedure %r" % name)
+            result = proc(*args, **kwargs)
+            data_list = self._serializer.serialize_result(result)
+            reply = self._build_reply(b'SUCCESS', data_list)
+            self.socket.send_multipart(reply)
         except Exception:
             self._send_error()
-        else:
-            try:
-                data_list = self._serializer.serialize_result(result)
-            except Exception:
-                self._send_error()
-            else:
-                reply = self._build_reply(b'SUCCESS', data_list)
-                self.socket.send_multipart(reply)
 
         self.idents = None
         self.msg_id = None
-    #}
-    def _send_error(self):  #{
-        """Send an error reply."""
-        etype, evalue, tb = sys.exc_info()
-        error_dict = {
-            'ename' : str(etype.__name__),
-            'evalue' : str(evalue),
-            'traceback' : traceback.format_exc(tb)
-        }
-        data_list = [jsonapi.dumps(error_dict)]
-        reply = self._build_reply(b'FAILURE', data_list)
-        self.socket.send_multipart(reply)
     #}
 
     #-------------------------------------------------------------------------
     # Public API
     #-------------------------------------------------------------------------
+
+    def register(self, func=None, name=None):  #{
+        """ A decorator to register a callable as a service task.
+
+            Examples:
+
+            service = TornadoRPCService()
+
+            @service.task
+            def echo(s):
+                return s
+
+            @service.proc(name='work')
+            def do_nothing():
+                pass
+
+            service.register(lambda: None, name='dummy')
+        """
+        if func is None:
+            if name is None:
+                raise ValueError("at least one argument is required")
+            return partial(self.register, name=name)
+        else:
+            if not callable(func):
+                raise ValueError("func argument should be callable")
+            if name is None:
+                name = func.__name__
+            self.procedures[name] = func
+
+        return func
+    #}
+
+    task = register  # alias
+    proc = register  # alias
 
     @abstractmethod
     def start(self):  #{

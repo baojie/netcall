@@ -10,45 +10,44 @@
 #  the file COPYING.BSD, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-
 import time
+from zpyrpc import TornadoRPCService, JSONSerializer
 
-from zpyrpc import TornadoRPCService, rpc_method, JSONSerializer
+
+# Custom serializer/deserializer can be set up upon initialization.
+# Obviously it must match on a client and server.
+echo = TornadoRPCService(serializer=JSONSerializer())
 
 
-class Echo(TornadoRPCService):
+@echo.task(name='echo')
+def echo_echo(s):
+    print "%r echo %r" % (echo.urls, s)
+    return s
 
-    @rpc_method
-    def echo(self, s):
-        print "%r echo %r" % (self.urls, s)
-        return s
+@echo.task(name='sleep')
+def echo_sleep(t):
+    print "%r sleep %s" % (echo.urls, t)
+    time.sleep(t)  # blocking!
 
-    @rpc_method
-    def sleep(self, t):
-        time.sleep(t)
+@echo.task(name='error')
+def echo_error():
+    raise ValueError('raising ValueError for fun!')
 
-    @rpc_method
-    def error(self):
-        raise ValueError('raising ValueError for fun!')
 
 class Math(TornadoRPCService):
 
-    @rpc_method
     def add(self, a, b):
         print "%r add %r %r" % (self.urls, a, b)
         return a+b
 
-    @rpc_method
     def subtract(self, a, b):
         print "%r subtract %r %r" % (self.urls, a, b)
         return a-b
 
-    @rpc_method
     def multiply(self, a, b):
         print "%r multiply %r %r" % (self.urls, a, b)
         return a*b
 
-    @rpc_method
     def divide(self, a, b):
         print "%r divide %r %r" % (self.urls, a, b)
         return a/b
@@ -57,23 +56,20 @@ class Math(TornadoRPCService):
 if __name__ == '__main__':
     # Multiple RPCService instances can be run in a single process
     # by registering async callbacks into a polling event loop (Tornado IOLoop).
-    # This happens transparently upon instantiation of an RPCService.
 
-    # Custom serializer/deserializer functions can be passed in. The server
-    # side ones must match.
-    echo = Echo(serializer=JSONSerializer())
-    echo.bind('tcp://127.0.0.1:5555')
-    echo.start()
+    echo.bind('tcp://127.0.0.1:5555');  echo.start()
 
     # We create two Math services to simulate load balancing. A client can
     # connect to both of these services and requests will be load balanced.
     math1 = Math()
-    math1.bind('tcp://127.0.0.1:5556')
-    math1.start()
-
     math2 = Math()
-    math2.bind('tcp://127.0.0.1:5557')
-    math2.start()
+
+    math1.bind('tcp://127.0.0.1:5556');  math1.start()
+    math2.bind('tcp://127.0.0.1:5557');  math2.start()
+
+    # another way of defining tasks
+    math2.register(echo_error, name='error')
+    math2.register(echo_sleep, name='sleep')
 
     echo.serve()  # this calls echo.ioloop.start() and since ioloop is
                   # the same for all services they all will be served

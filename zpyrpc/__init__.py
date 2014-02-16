@@ -12,11 +12,12 @@ Example
 To create a simple service::
 
     from zpyrpc import TornadoRPCService
-    class Echo(TornadoRPCService):
 
-        @rpc_method
-        def echo(self, s):
-            return s
+    echo = TornadoRPCService()
+
+    @echo.task
+    def echo(self, s):
+        return s
 
     echo = Echo()
     echo.bind('tcp://127.0.0.1:5555')
@@ -26,6 +27,7 @@ To create a simple service::
 To talk to this service::
 
     from zpyrpc import SyncRPCClient
+
     p = SyncRPCClient()
     p.connect('tcp://127.0.0.1:5555')
     p.echo('Hi there')
@@ -45,7 +47,7 @@ To talk to this service::
 
 # Notice: for gevent versions of the classes import zpyrc.green
 
-from .service import TornadoRPCService, rpc_method
+from .service import TornadoRPCService
 from .client  import (
     SyncRPCClient, TornadoRPCClient, AsyncRemoteMethod, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError

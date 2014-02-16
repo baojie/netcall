@@ -12,69 +12,65 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-
 from gevent       import joinall, sleep as gevent_sleep
+from zpyrpc.green import GeventRPCService, JSONSerializer
 
-from zpyrpc.green import GeventRPCService, rpc_method, JSONSerializer
+
+# Custom serializer/deserializer can be set up upon initialization.
+# Obviously it must match on a client and server.
+echo = GeventRPCService(serializer=JSONSerializer())
 
 
-class Echo(GeventRPCService):
+@echo.task(name='echo')
+def echo_echo(s):
+    print "%r echo %r" % (echo.urls, s)
+    return s
 
-    @rpc_method
-    def echo(self, s):
-        print "%r echo %r" % (self.urls, s)
-        return s
+@echo.task(name='sleep')
+def echo_sleep(t):
+    print "%r sleep %s" % (echo.urls, t)
+    gevent_sleep(t)
 
-    @rpc_method
-    def sleep(self, t):
-        print "%r sleep %s" % (self.urls, t)
-        gevent_sleep(t)
+@echo.task(name='error')
+def echo_error():
+    raise ValueError('raising ValueError for fun!')
 
-    @rpc_method
-    def error(self):
-        raise ValueError('raising ValueError for fun!')
 
 class Math(GeventRPCService):
 
-    @rpc_method
     def add(self, a, b):
         print "%r add %r %r" % (self.urls, a, b)
         return a+b
 
-    @rpc_method
     def subtract(self, a, b):
         print "%r subtract %r %r" % (self.urls, a, b)
         return a-b
 
-    @rpc_method
     def multiply(self, a, b):
         print "%r multiply %r %r" % (self.urls, a, b)
         return a*b
 
-    @rpc_method
     def divide(self, a, b):
         print "%r divide %r %r" % (self.urls, a, b)
         return a/b
 
 
 if __name__ == '__main__':
-    # Multiple RPCService instances can be run in a single process
-    # via Greenlets (Gevent cooperative multitasking)
-
-    # Custom serializer/deserializer functions can be passed in. The server
-    # side ones must match.
-    echo = Echo(serializer=JSONSerializer())
     echo.bind('tcp://127.0.0.1:5555')
 
     # We create two Math services to simulate load balancing. A client can
     # connect to both of these services and requests will be load balanced.
     math1 = Math()
-    math1.bind('tcp://127.0.0.1:5556')
-
     math2 = Math()
+
+    math1.bind('tcp://127.0.0.1:5556')
     math2.bind('tcp://127.0.0.1:5557')
 
-    # Next we spawn service greenlets and wait for them to exit
+    # another way of defining tasks
+    math2.register(echo_error, name='error')
+    math2.register(echo_sleep, name='sleep')
+
+    # now we spawn service greenlets and wait for them to exit
     joinall([
         echo.start(),
         math1.start(),
