@@ -11,7 +11,7 @@
 #-----------------------------------------------------------------------------
 
 import time
-from zpyrpc import TornadoRPCService, JSONSerializer
+from netcall import TornadoRPCService, JSONSerializer
 
 
 # Custom serializer/deserializer can be set up upon initialization.

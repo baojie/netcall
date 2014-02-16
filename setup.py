@@ -1,17 +1,19 @@
+#!/usr/bin/env python
+
 from setuptools import setup, find_packages
 
 setup(
-    name = "zpyrpc",
-    version = "0.2",
+    name = "netcall",
+    version = "0.1",
     packages = find_packages(),
 
-    install_requires = ['tornado','pyzmq','gevent'],
+    install_requires = ['pyzmq','tornado'],
 
-    author = "Brian Granger",
-    author_email = "ellisonbg@gmail.com",
-    description = "Zippy fast and simple Python RPC based on ZeroMQ and Tornado/Gevent",
+    author = "Alexander Glyzov",
+    author_email = "bonoba@gmail.com",
+    description = "A simple Python RPC system (ZeroMQ + Tornado/Gevent)",
     license = "Modified BSD",
-    keywords = "ZeroMQ Tornado Gevent PyZMQ",
-    url = "http://github.com/aglyzov/zpyrpc",
+    keywords = "ZeroMQ ZMQ PyZMQ Tornado Gevent RPC async",
+    url = "http://github.com/aglyzov/netcall",
 )
 

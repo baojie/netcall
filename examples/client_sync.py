@@ -16,7 +16,7 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from zpyrpc import SyncRPCClient, RemoteRPCError, JSONSerializer
+from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer
 
 
 if __name__ == '__main__':

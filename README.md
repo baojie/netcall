@@ -1,40 +1,40 @@
-# ZPyRPC = "Zippy RPC" (fork)
-Notice this code was forked from [original ZPyRPC](https://github.com/ellisonbg/zpyrpc) in Feb 2014.
-The fork adds Gevent support, refactors code and makes some incompatible API changes.
+# NetCall -- a simple Python RPC system
 
-Fast and simple Python RPC based on ZeroMQ and Tornado/Gevent
+This is a simple Python [RPC](http://en.wikipedia.org/wiki/Remote_procedure_call)
+system based on [ZeroMQ](http://zeromq.org/tutorials:dealer-and-router)
+and [IOLoop](http://zeromq.github.io/pyzmq/api/generated/zmq.eventloop.ioloop.html#zmq.eventloop.ioloop.ZMQIOLoop)/[Gevent](http://www.gevent.org/).
 
-## Overview
+Initially the code was forked from [ZPyRPC](https://github.com/ellisonbg/zpyrpc) in Feb 2014.
+The fork has added [Gevent](http://www.gevent.org/) support, refactored code, made incompatible API changes
+and added new examples.
 
-This library provides a small robust RPC system for Python
-code using [ZeroMQ](http://zeromq.org/) and
-[Tornado](http://www.tornadoweb.org/)/[Gevent](http://www.gevent.org/).
-It was originally designed in the context of
-[IPython](http://ipython.org/), but eventually
-has been spun out into its own project.
+## Feature Overview
 
-Some of the nice features:
-
-* Fast and simple.
-* Round robin load balance requests to multiple services.
-* Route requests using all of the glory of [ZeroMQ](http://zeromq.org/tutorials:dealer-and-router).
-* Both synchronous and asynchronous clients (Tornado or Gevent).
-* Set a timeout on RPC calls.
-* Run multple services in a single process.
-* Pluggable serialization (Pickle [default], JSON, [MessagePack](http://msgpack.org/)).
+* Reasonably fast
+* Simple hackable code
+* Really easy API
+* Auto load balancing of multiple services (thanks to ZeroMQ)
+* Full [ZeroMQ routing](http://zeromq.org/tutorials:dealer-and-router) routing as a bonus
+* Asynchronous servers (IOLoop or Gevent)
+* Both synchronous and asynchronous clients (IOLoop or Gevent)
+* Ability to set a timeout on RPC calls
+* Ability to run multple services in a single process
+* Pluggable serialization (Pickle [default], JSON, [MessagePack](http://msgpack.org/))
 
 ## Example
 
-To create a simple service:
+To create a service:
 
 ```python
-from zpyrpc import TornadoRPCService
+from netcall import TornadoRPCService
 
 echo = TornadoRPCService()
 
 @echo.task
 def echo(self, s):
     return s
+    
+echo.register(lambda n: "Hello %s" % n, name='hello')    
 
 echo.bind('tcp://127.0.0.1:5555')
 echo.bind('ipc:///tmp/echo.service')  # multiple endpoints
@@ -45,18 +45,19 @@ echo.serve()
 To talk to this service::
 
 ```python
-from zpyrpc.green import GeventRPCClient
+from netcall.green import GeventRPCClient
 
 p = GeventRPCClient()
 p.connect('tcp://127.0.0.1:5555')
 p.connect('ipc:///tmp/echo.service')  # auto load balancing
 p.echo('Hi there')
 'Hi there'
+p.hello('World')
+'Hello World'
 ```
 
-See other [examples](https://github.com/aglyzov/zpyrpc/tree/master/examples).
+See other [examples](https://github.com/aglyzov/netcall/tree/master/examples).
 
 
 
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/aglyzov/zpyrpc/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
-
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/aglyzov/netcall/trend.png)](https://bitdeli.com/free "Bitdeli Badge")

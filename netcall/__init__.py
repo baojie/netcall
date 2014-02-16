@@ -1,5 +1,5 @@
 """
-A simple robust RPC library for Python using ZeroMQ as a transport.
+NetCall - A simple Python RPC system using ZeroMQ as a transport
 
 Authors:
 
@@ -11,7 +11,7 @@ Example
 
 To create a simple service::
 
-    from zpyrpc import TornadoRPCService
+    from netcall import TornadoRPCService
 
     echo = TornadoRPCService()
 
@@ -26,7 +26,7 @@ To create a simple service::
 
 To talk to this service::
 
-    from zpyrpc import SyncRPCClient
+    from netcall import SyncRPCClient
 
     p = SyncRPCClient()
     p.connect('tcp://127.0.0.1:5555')

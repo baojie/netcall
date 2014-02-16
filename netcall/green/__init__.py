@@ -1,4 +1,5 @@
-""" Gevent versions of RPC service and client
+"""
+Gevent versions of RPC service and client
 
 Authors:
 
@@ -10,7 +11,7 @@ Example
 
 To create a simple service::
 
-    from zpyrpc.green import GeventRPCService
+    from netcall.green import GeventRPCService
 
     echo = GeventRPCService()
 
@@ -25,7 +26,7 @@ To create a simple service::
 
 To talk to this service::
 
-    from zpyrpc.green import GeventRPCClient
+    from netcall.green import GeventRPCClient
 
     p = GeventRPCClient()
     p.connect('tcp://127.0.0.1:5555')

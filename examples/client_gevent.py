@@ -16,8 +16,8 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from gevent       import spawn, joinall
-from zpyrpc.green import GeventRPCClient, RemoteRPCError, JSONSerializer
+from gevent        import spawn, joinall
+from netcall.green import GeventRPCClient, RemoteRPCError, JSONSerializer
 
 def printer(msg, func, *args):
     "run a function, print results"

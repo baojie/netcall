@@ -1,5 +1,5 @@
 """
-Serialization classes for ZPyRPC.
+Serialization classes for NetCall.
 
 Authors:
 

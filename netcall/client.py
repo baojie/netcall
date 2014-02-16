@@ -1,6 +1,7 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=indent
 
-"""Client/proxy classes to talk to a ZPyRPC service.
+"""
+Client/proxy classes to talk to a NetCall service.
 
 Authors:
 

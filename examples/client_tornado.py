@@ -16,7 +16,7 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from zpyrpc import TornadoRPCClient, JSONSerializer
+from netcall       import TornadoRPCClient, JSONSerializer
 from zmq.eventloop import ioloop
 
 def print_result(r):

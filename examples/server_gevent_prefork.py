@@ -23,8 +23,8 @@ from gevent import joinall, sleep as gevent_sleep, spawn
 from os              import getpid
 from multiprocessing import Process, cpu_count
 
-from zmq          import green, ROUTER, DEALER, QUEUE
-from zpyrpc.green import GeventRPCService, JSONSerializer
+from zmq           import green, ROUTER, DEALER, QUEUE
+from netcall.green import GeventRPCService, JSONSerializer
 
 
 class EchoService(GeventRPCService):

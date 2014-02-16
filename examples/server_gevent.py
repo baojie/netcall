@@ -12,8 +12,8 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from gevent       import joinall, sleep as gevent_sleep
-from zpyrpc.green import GeventRPCService, JSONSerializer
+from gevent        import joinall, sleep as gevent_sleep
+from netcall.green import GeventRPCService, JSONSerializer
 
 
 # Custom serializer/deserializer can be set up upon initialization.
