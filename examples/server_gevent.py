@@ -30,6 +30,8 @@ def echo_echo(s):
 def echo_sleep(t):
     print "%r sleep %s" % (echo.urls, t)
     gevent_sleep(t)
+    print "end of sleep"
+    return t
 
 @echo.task(name='error')
 def echo_error():

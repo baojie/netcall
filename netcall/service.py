@@ -23,6 +23,7 @@ Authors:
 import sys
 import traceback
 
+from logging   import getLogger
 from functools import partial
 from abc       import abstractmethod
 
@@ -32,7 +33,12 @@ from zmq.eventloop.zmqstream import ZMQStream
 from zmq.eventloop.ioloop    import IOLoop
 from zmq.utils               import jsonapi
 
+from tornado.concurrent import Future
+
 from .base import RPCBase
+
+
+logger = getLogger("netcall")
 
 
 #-----------------------------------------------------------------------------
@@ -56,69 +62,105 @@ class RPCServiceBase(RPCBase):  #{
             if callable(proc):
                 self.procedures[name] = proc
     #}
-    def _build_reply(self, status, data):  #{
+    def _send_ok(self, request, result):  #{
+        "Send a OK reply"
+        data_list = self._serializer.serialize_result(result)
+        reply = self._build_reply(request, b'OK', data_list)
+        self.socket.send_multipart(reply)
+    #}
+    def _send_fail(self, request):  #{
+        """Send a FAIL reply"""
+        # take the current exception implicitly
+        etype, evalue, tb = sys.exc_info()
+        error_dict = {
+            'ename'     : str(etype.__name__),
+            'evalue'    : str(evalue),
+            'traceback' : traceback.format_exc(tb)
+        }
+        data_list = [jsonapi.dumps(error_dict)]
+        reply = self._build_reply(request, b'FAIL', data_list)
+        self.socket.send_multipart(reply)
+    #}
+    def _parse_request(self, msg_list):  #{
+        """
+        Parse a request
+        (should not raise an exception)
+
+        The request is received as a multipart message:
+
+        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+
+        Returns either a None or a dict {
+            'route'  : [<id:bytes>, ...],  # list of all dealer ids (a return path)
+            'msg_id' : <id:bytes>,         # unique message id
+            'proc'   : <callable>,         # a task callable
+            'args'   : [<arg1>, ...],      # positional arguments
+            'kwargs' : {<kw1>, ...},       # keyword arguments
+            'error'  : None or <Exception>
+        }
+        """
+        if len(msg_list) < 5 or b'|' not in msg_list:
+            return None
+
+        error    = None
+        boundary = msg_list.index(b'|')
+        name     = msg_list[boundary+2]
+        proc     = self.procedures.get(name, None)
+        if proc is None:
+            print name
+            error = NotImplementedError("Unregistered procedure %r" % name)
+        data     = msg_list[boundary+3:]
+        try:
+            args, kwargs = self._serializer.deserialize_args_kwargs(data)
+        except Exception, e:
+            error = e
+
+        request  = dict(
+            route  = msg_list[0:boundary],
+            msg_id = msg_list[boundary+1],
+            proc   = proc,
+            args   = args,
+            kwargs = kwargs,
+            error  = error,
+        )
+        return request
+    #}
+    def _build_reply(self, request, status, data):  #{
         """Build a reply message for status and data.
 
         Parameters
         ----------
         status : bytes
-            Either b'SUCCESS' or b'FAILURE'.
+            Either b'OK' or b'FAIL'.
         data : list of bytes
             A list of data frame to be appended to the message.
         """
         reply = []
-        reply.extend(self.idents)
-        reply.extend([b'|', self.msg_id, status])
+        reply.extend(request['route'])
+        reply.extend([b'|', request['msg_id'], status])
         reply.extend(data)
         return reply
     #}
-    def _send_error(self):  #{
-        """Send an error reply."""
-        etype, evalue, tb = sys.exc_info()
-        error_dict = {
-            'ename' : str(etype.__name__),
-            'evalue' : str(evalue),
-            'traceback' : traceback.format_exc(tb)
-        }
-        data_list = [jsonapi.dumps(error_dict)]
-        reply = self._build_reply(b'FAILURE', data_list)
-        self.socket.send_multipart(reply)
-    #}
+
+    @abstractmethod
     def _handle_request(self, msg_list):  #{
-        """Handle an incoming request.
+        """
+        Handle an incoming request.
 
         The request is received as a multipart message:
 
-        [<idents>, b'|', msg_id, method, <sequence of serialized args/kwargs>]
+        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
 
         The reply depends on if the call was successful or not:
 
-        [<idents>, b'|', msg_id, 'SUCCESS', <sequece of serialized result>]
-        [<idents>, b'|', msg_id, 'FAILURE', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
+
+        Note: subclasses have to override this method
         """
-        i = msg_list.index(b'|')
-        self.idents = msg_list[0:i]
-        self.msg_id = msg_list[i+1]
-        name = msg_list[i+2]
-        data = msg_list[i+3:]
-        args, kwargs = self._serializer.deserialize_args_kwargs(data)
-
-        # Find and call the actual handler for message.
-        try:
-            proc = self.procedures.get(name, None)
-            if proc is None:
-                raise NotImplementedError("Unregistered procedure %r" % name)
-            result = proc(*args, **kwargs)
-            data_list = self._serializer.serialize_result(result)
-            reply = self._build_reply(b'SUCCESS', data_list)
-            self.socket.send_multipart(reply)
-        except Exception:
-            self._send_error()
-
-        self.idents = None
-        self.msg_id = None
+        pass
     #}
 
     #-------------------------------------------------------------------------
@@ -207,6 +249,44 @@ class TornadoRPCService(RPCServiceBase):  #{
         super(TornadoRPCService, self)._create_socket()
         socket = self.context.socket(zmq.ROUTER)
         self.socket = ZMQStream(socket, self.ioloop)
+    #}
+    def _handle_request(self, msg_list):  #{
+        """Handle an incoming request.
+
+        The request is received as a multipart message:
+
+        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+
+        The reply depends on if the call was successful or not:
+
+        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+
+        Here the (ename, evalue, traceback) are utf-8 encoded unicode.
+        """
+        req = self._parse_request(msg_list)
+        if req is None:
+            logger.error('bad request: %r' % msg_list)
+            return
+
+        try:
+            # raise any parsing errors here
+            if req['error']:
+                raise req['error']
+            # call procedure
+            res = req['proc'](*req['args'], **req['kwargs'])
+        except Exception:
+            self._send_fail(req)
+        else:
+            def send_future_result(fut):
+                try:    res = fut.result()
+                except: self._send_fail(req)
+                else:   self._send_ok(req, res)
+
+            if isinstance(res, Future):
+                self.ioloop.add_future(res, send_future_result)
+            else:
+                self._send_ok(req, res)
     #}
     def start(self):  #{
         """ Start the RPC service (non-blocking) """

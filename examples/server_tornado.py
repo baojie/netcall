@@ -10,7 +10,10 @@
 #  the file COPYING.BSD, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-import time
+from zmq.eventloop import ioloop
+ioloop.install()
+
+from tornado import gen
 from netcall import TornadoRPCService, JSONSerializer
 
 
@@ -25,9 +28,13 @@ def echo_echo(s):
     return s
 
 @echo.task(name='sleep')
+@gen.coroutine
 def echo_sleep(t):
     print "%r sleep %s" % (echo.urls, t)
-    time.sleep(t)  # blocking!
+    loop = echo.ioloop
+    yield gen.Task(loop.add_timeout, loop.time()+t)
+    print "end of sleep"
+    raise gen.Return(t)
 
 @echo.task(name='error')
 def echo_error():

@@ -20,12 +20,17 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
+from logging import getLogger
+
 import gevent
 import zmq
 
 from zmq import green
 
 from ..service import RPCServiceBase
+
+
+logger = getLogger("netcall")
 
 
 #-----------------------------------------------------------------------------
@@ -55,6 +60,36 @@ class GeventRPCService(RPCServiceBase):
     def _create_socket(self):  #{
         super(GeventRPCService, self)._create_socket()
         self.socket = self.context.socket(zmq.ROUTER)
+    #}
+    def _handle_request(self, msg_list):  #{
+        """Handle an incoming request.
+
+        The request is received as a multipart message:
+
+        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+
+        The reply depends on if the call was successful or not:
+
+        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+
+        Here the (ename, evalue, traceback) are utf-8 encoded unicode.
+        """
+        req = self._parse_request(msg_list)
+        if req is None:
+            logger.error('bad request: %r' % msg_list)
+            return
+
+        try:
+            # raise any parsing errors here
+            if req['error']:
+                raise req['error']
+            # call procedure
+            res = req['proc'](*req['args'], **req['kwargs'])
+        except Exception:
+            self._send_fail(req)
+        else:
+            self._send_ok(req, res)
     #}
     def start(self):  #{
         """ Start the RPC service (non-blocking).

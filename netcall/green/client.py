@@ -151,10 +151,10 @@ class GeventRPCClient(RPCClientBase):
 
         status = msg_list[2]
 
-        if status == b'SUCCESS':
+        if status == b'OK':
             result = self._serializer.deserialize_result(msg_list[3:])
             return result
-        elif status == b'FAILURE':
+        elif status == b'FAIL':
             error_dict = jsonapi.loads(msg_list[3])
             raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
 

@@ -46,4 +46,6 @@ if __name__ == '__main__':
             math.add(print_result, print_error, 0, i,j)
 
     loop = ioloop.IOLoop.instance()
+    loop.add_timeout(loop.time()+3, loop.stop)
     loop.start()
+

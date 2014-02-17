@@ -20,10 +20,11 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-import logging
 import sys
 import traceback
 import uuid
+
+from logging import getLogger
 
 import zmq
 
@@ -32,6 +33,10 @@ from zmq.eventloop.ioloop    import IOLoop, DelayedCallback
 from zmq.utils               import jsonapi
 
 from .base import RPCBase
+
+
+logger = getLogger("netcall")
+
 
 #-----------------------------------------------------------------------------
 # RPC Service Proxy
@@ -106,10 +111,10 @@ class SyncRPCClient(RPCClientBase):
         #msg_id = msg_list[1]
         status = msg_list[2]
 
-        if status == b'SUCCESS':
+        if status == b'OK':
             result = self._serializer.deserialize_result(msg_list[3:])
             return result
-        elif status == b'FAILURE':
+        elif status == b'FAIL':
             error_dict = jsonapi.loads(msg_list[3])
             raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
 
@@ -145,7 +150,7 @@ class TornadoRPCClient(RPCClientBase):
     def _handle_reply(self, msg_list):
         # msg_list[0] == b'|'
         if not msg_list[0] == b'|':
-            logging.error('Unexpected reply message format in TornadoRPCClient._handle_reply')
+            logger.error('Unexpected reply message format in TornadoRPCClient._handle_reply')
             return
         msg_id = msg_list[1]
         status = msg_list[2]
@@ -155,18 +160,18 @@ class TornadoRPCClient(RPCClientBase):
             # Stop the timeout if there was one.
             if dc is not None:
                 dc.stop()
-            if status == b'SUCCESS' and cb is not None:
+            if status == b'OK' and cb is not None:
                 result = self._serializer.deserialize_result(msg_list[3:])
                 try:
                     cb(result)
                 except:
-                    logging.error('Unexpected callback error', exc_info=True)
-            elif status == b'FAILURE' and eb is not None:
+                    logger.error('Unexpected callback error', exc_info=True)
+            elif status == b'FAIL' and eb is not None:
                 error_dict = jsonapi.loads(msg_list[3])
                 try:
                     eb(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
                 except:
-                    logging.error('Unexpected errback error', exc_info=True)
+                    logger.error('Unexpected errback error', exc_info=True)
 
     #-------------------------------------------------------------------------
     # Public API
