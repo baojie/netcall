@@ -39,7 +39,7 @@ class RPCBase(object):
 
         Parameters
         ==========
-        serializer : Serializer
+        serializer : [optional] <Serializer>
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """

@@ -18,6 +18,7 @@
 
 from gevent        import spawn, joinall
 from netcall.green import GeventRPCClient, RemoteRPCError, JSONSerializer
+from netcall import setup_logger
 
 def printer(msg, func, *args):
     "run a function, print results"
@@ -26,6 +27,8 @@ def printer(msg, func, *args):
     print msg, '<response>', res
 
 if __name__ == '__main__':
+    setup_logger()
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = GeventRPCClient(serializer=JSONSerializer())

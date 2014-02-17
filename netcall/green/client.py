@@ -20,13 +20,17 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from zmq       import green
-from zmq.utils import jsonapi
+from logging import getLogger
+
+from zmq import green
 
 from gevent       import spawn
 from gevent.event import Event, AsyncResult
 
-from ..client import RPCClientBase, RPCError, RemoteRPCError
+from ..client import RPCClientBase
+
+
+logger = getLogger("netcall")
 
 #-----------------------------------------------------------------------------
 # RPC Service Proxy
@@ -97,21 +101,31 @@ class GeventRPCClient(RPCClientBase):
                     msg_list = socket.recv_multipart()
                 except Exception, e:
                     # the socket must have been closed
-                    print e
+                    logger.warning(e)
                     break
 
-                if not msg_list[0] == b'|':
-                    err_msg = 'Unexpected reply message format in GeventRPCClient._reader'
-                    print err_msg
-                    raise RPCError(err_msg)
+                logger.debug('received: %r' % msg_list)
 
-                # look for matching async result
-                msg_id = msg_list[1]
-                if msg_id in results:
-                    results[msg_id].set(msg_list)
-                    del results[msg_id]
+                reply = self._parse_reply(msg_list)
 
-        print 'EXIT'
+                if reply is None:
+                    continue
+
+                req_id   = reply['req_id']
+                msg_type = reply['type']
+                result   = reply['result']
+
+                if msg_type == b'ACK':
+                    continue
+
+                async = results.pop(req_id, None)
+
+                if msg_type == b'OK':
+                    async.set(result)
+                else:
+                    async.set_exception(result)
+
+        logger.warning('_reader exited')
 
     def shutdown(self):
         """Close the socket and signal the reader greenlet to exit"""
@@ -147,14 +161,4 @@ class GeventRPCClient(RPCClientBase):
         self._results[msg_id] = result
 
         self.socket.send_multipart(msg_list)
-        msg_list = result.get()  # block waiting for a reply passed by ._reader
-
-        status = msg_list[2]
-
-        if status == b'OK':
-            result = self._serializer.deserialize_result(msg_list[3:])
-            return result
-        elif status == b'FAIL':
-            error_dict = jsonapi.loads(msg_list[3])
-            raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
-
+        return result.get()  # block waiting for a reply passed by ._reader

@@ -19,12 +19,11 @@
 from netcall       import TornadoRPCClient, JSONSerializer
 from zmq.eventloop import ioloop
 
-def print_result(r):
-    print "Got result:", r
+def print_result(res):
+    print "Got result:", res
 
-def print_error(ename, evalue, tb):
-    print "Got error:", ename, evalue
-    print tb
+def print_error(err):
+    print "Got error:", err
 
 if __name__ == '__main__':
     # Custom serializer/deserializer functions can be passed in. The server

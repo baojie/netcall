@@ -23,8 +23,10 @@ Authors:
 import sys
 import traceback
 
-from logging   import getLogger
+from itertools import chain
 from functools import partial
+from logging   import getLogger
+from uuid      import uuid1
 from abc       import abstractmethod
 
 import zmq
@@ -50,7 +52,21 @@ class RPCServiceBase(RPCBase):  #{
     _RESERVED = ['registser','proc','task','start','stop','serve']
 
     def __init__(self, *args, **kwargs):  #{
+        """
+        Parameters
+        ==========
+        serializer : [optional] <Serializer>
+            An instance of a Serializer subclass that will be used to serialize
+            and deserialize args, kwargs and the result.
+
+        service_id : [optional] <bytes>
+        """
+        service_id = kwargs.pop('service_id', None)
+
         super(RPCServiceBase, self).__init__(*args, **kwargs)
+
+        self.service_id = service_id \
+                       or b'%s/%s' % (self.__class__.__name__, uuid1())
         self.procedures = {}  # {<name> : <callable>}
 
         # register extra class methods as service procedures
@@ -61,6 +77,11 @@ class RPCServiceBase(RPCBase):  #{
             except: continue
             if callable(proc):
                 self.procedures[name] = proc
+    #}
+    def _send_ack(self, request):  #{
+        "Send an ACK notification"
+        reply = self._build_reply(request, b'ACK', [self.service_id])
+        self.socket.send_multipart(reply)
     #}
     def _send_ok(self, request, result):  #{
         "Send a OK reply"
@@ -88,11 +109,11 @@ class RPCServiceBase(RPCBase):  #{
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
 
         Returns either a None or a dict {
             'route'  : [<id:bytes>, ...],  # list of all dealer ids (a return path)
-            'msg_id' : <id:bytes>,         # unique message id
+            'req_id' : <id:bytes>,         # unique message id
             'proc'   : <callable>,         # a task callable
             'args'   : [<arg1>, ...],      # positional arguments
             'kwargs' : {<kw1>, ...},       # keyword arguments
@@ -100,6 +121,7 @@ class RPCServiceBase(RPCBase):  #{
         }
         """
         if len(msg_list) < 5 or b'|' not in msg_list:
+            logger.error('bad request: %r' % msg_list)
             return None
 
         error    = None
@@ -107,7 +129,6 @@ class RPCServiceBase(RPCBase):  #{
         name     = msg_list[boundary+2]
         proc     = self.procedures.get(name, None)
         if proc is None:
-            print name
             error = NotImplementedError("Unregistered procedure %r" % name)
         data     = msg_list[boundary+3:]
         try:
@@ -115,31 +136,30 @@ class RPCServiceBase(RPCBase):  #{
         except Exception, e:
             error = e
 
-        request  = dict(
+        return dict(
             route  = msg_list[0:boundary],
-            msg_id = msg_list[boundary+1],
+            req_id = msg_list[boundary+1],
             proc   = proc,
             args   = args,
             kwargs = kwargs,
             error  = error,
         )
-        return request
     #}
-    def _build_reply(self, request, status, data):  #{
+    def _build_reply(self, request, typ, data):  #{
         """Build a reply message for status and data.
 
         Parameters
         ----------
-        status : bytes
-            Either b'OK' or b'FAIL'.
+        typ : bytes
+            Either b'ACK', b'OK' or b'FAIL'.
         data : list of bytes
             A list of data frame to be appended to the message.
         """
-        reply = []
-        reply.extend(request['route'])
-        reply.extend([b'|', request['msg_id'], status])
-        reply.extend(data)
-        return reply
+        return list(chain(
+            request['route'],
+            [b'|', request['req_id'], typ],
+            data,
+        ))
     #}
 
     @abstractmethod
@@ -149,12 +169,17 @@ class RPCServiceBase(RPCBase):  #{
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
 
-        The reply depends on if the call was successful or not:
+        First, the service sends back a notification that the message was
+        indeed received:
 
-        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', req_id, b'ACK',  service_id]
+
+        Next, the actual reply depends on if the call was successful or not:
+
+        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
 
@@ -251,23 +276,29 @@ class TornadoRPCService(RPCServiceBase):  #{
         self.socket = ZMQStream(socket, self.ioloop)
     #}
     def _handle_request(self, msg_list):  #{
-        """Handle an incoming request.
+        """
+        Handle an incoming request.
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
 
-        The reply depends on if the call was successful or not:
+        First, the service sends back a notification that the message was
+        indeed received:
 
-        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', req_id, b'ACK',  service_id]
+
+        Next, the actual reply depends on if the call was successful or not:
+
+        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
         """
         req = self._parse_request(msg_list)
         if req is None:
-            logger.error('bad request: %r' % msg_list)
             return
+        self._send_ack(req)
 
         try:
             # raise any parsing errors here

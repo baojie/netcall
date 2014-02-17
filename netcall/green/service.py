@@ -66,19 +66,24 @@ class GeventRPCService(RPCServiceBase):
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', msg_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
 
-        The reply depends on if the call was successful or not:
+        First, the service sends back a notification that the message was
+        indeed received:
 
-        [<id>..<id>, b'|', msg_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', msg_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', req_id, b'ACK',  service_id]
+
+        Next, the actual reply depends on if the call was successful or not:
+
+        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
+        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
         """
         req = self._parse_request(msg_list)
         if req is None:
-            logger.error('bad request: %r' % msg_list)
             return
+        self._send_ack(req)
 
         try:
             # raise any parsing errors here

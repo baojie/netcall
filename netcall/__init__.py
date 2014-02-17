@@ -1,3 +1,5 @@
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
+
 """
 NetCall - A simple Python RPC system using ZeroMQ as a transport
 
@@ -19,7 +21,6 @@ To create a simple service::
     def echo(self, s):
         return s
 
-    echo = Echo()
     echo.bind('tcp://127.0.0.1:5555')
     echo.start()
     echo.serve()
@@ -54,3 +55,22 @@ from .client  import (
 )
 from .serializer import *
 
+from sys     import stderr
+from logging import getLogger, DEBUG
+
+logger = getLogger('netcall')
+
+
+def setup_logger(logger=logger, level=DEBUG, stream=stderr):  #{
+    """ A utility function to setup a basic logging handler
+        for a given logger (netcall by default)
+    """
+    from logging import StreamHandler, Formatter
+
+    handler   = StreamHandler(stream)
+    formatter = Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    handler.setLevel(level)
+    handler.setFormatter(formatter)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+#}

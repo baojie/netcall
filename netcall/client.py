@@ -1,7 +1,7 @@
-# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=indent
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
 """
-Client/proxy classes to talk to a NetCall service.
+Client classes to talk to a NetCall service.
 
 Authors:
 
@@ -10,20 +10,17 @@ Authors:
 """
 
 #-----------------------------------------------------------------------------
-#  Copyright (C) 2012. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
+#  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
 #
 #  Distributed under the terms of the BSD License.  The full license is in
-#  the file COPYING.BSD, distributed as part of this software.
+#  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
 #-----------------------------------------------------------------------------
 # Imports
 #-----------------------------------------------------------------------------
 
-import sys
-import traceback
-import uuid
-
+from uuid    import uuid4
 from logging import getLogger
 
 import zmq
@@ -42,29 +39,80 @@ logger = getLogger("netcall")
 # RPC Service Proxy
 #-----------------------------------------------------------------------------
 
-class RPCClientBase(RPCBase):
+class RPCClientBase(RPCBase):  #{
     """A service proxy to for talking to an RPCService."""
 
-    def _create_socket(self):
+    def _create_socket(self):  #{
         self.socket = self.context.socket(zmq.DEALER)
-        self.socket.setsockopt(zmq.IDENTITY, bytes(uuid.uuid4()))
-
-    def _build_request(self, method, args, kwargs):
-        msg_id = bytes(uuid.uuid4())
+        self.socket.setsockopt(zmq.IDENTITY, bytes(uuid4()))
+    #}
+    def _build_request(self, method, args, kwargs):  #{
+        req_id = bytes(uuid4())
         method = bytes(method)
-        msg_list = [b'|', msg_id, method]
+        msg_list = [b'|', req_id, method]
         data_list = self._serializer.serialize_args_kwargs(args, kwargs)
         msg_list.extend(data_list)
-        return msg_id, msg_list
+        return req_id, msg_list
+    #}
+    def _parse_reply(self, msg_list):  #{
+        """
+        Parse a reply from service
+        (should not raise an exception)
 
-    def __getattr__(self, name):
+        The reply is received as a multipart message:
+
+        [b'|', req_id, type, payload ...]
+
+        Returns either None or a dict {
+            'type'   : <message_type:bytes>       # ACK | OK | FAIL
+            'req_id' : <id:bytes>,                # unique message id
+            'srv_id' : <service_id:bytes> | None  # only for ACK messages
+            'result' : <object>
+        }
+        """
+        if len(msg_list) < 4 or msg_list[0] != b'|':
+            logger.error('bad reply: %r' % msg_list)
+            return None
+
+        msg_type = msg_list[2]
+        data     = msg_list[3:]
+        result   = None
+        srv_id   = None
+
+        if msg_type == b'ACK':
+            srv_id = data[0]
+        elif msg_type == b'OK':
+            try:
+                result = self._serializer.deserialize_result(data)
+            except Exception, e:
+                msg_type = b'FAIL'
+                result   = e
+        elif msg_type == b'FAIL':
+            try:
+                error  = jsonapi.loads(msg_list[3])
+                result = RemoteRPCError(error['ename'], error['evalue'], error['traceback'])
+            except Exception, e:
+                logger.error('unexpected error while decoding FAIL', exc_info=True)
+                result = RPCError('unexpected error while decoding FAIL: %s' % e)
+        else:
+            result = RPCError('bad message type: %r' % msg_type)
+
+        return dict(
+            type   = msg_type,
+            req_id = msg_list[1],
+            srv_id = srv_id,
+            result = result,
+        )
+    #}
+
+    def __getattr__(self, name):  #{
         return RemoteMethod(self, name)
-
-
-class SyncRPCClient(RPCClientBase):
+    #}
+#}
+class SyncRPCClient(RPCClientBase):  #{
     """A synchronous service proxy whose requests will block."""
 
-    def __init__(self, context=None, **kwargs):
+    def __init__(self, context=None, **kwargs):  #{
         """
         Parameters
         ==========
@@ -78,51 +126,53 @@ class SyncRPCClient(RPCClientBase):
         assert context is None or isinstance(context, zmq.Context)
         self.context = context if context is not None else zmq.Context.instance()
         super(SyncRPCClient, self).__init__(**kwargs)
+    #}
 
-    def call(self, method, *args, **kwargs):
-        """Call the remote method with *args and **kwargs.
+    def call(self, proc_name, *args, **kwargs):  #{
+        """
+        Call the remote method with *args and **kwargs
+        (may raise exception)
 
         Parameters
         ----------
-        method : str
-            The name of the remote method to call.
-        args : tuple
-            The tuple of arguments to pass as `*args` to the RPC method.
-        kwargs : dict
-            The dict of arguments to pass as `**kwargs` to the RPC method.
+        proc_name : <bytes> name of the remote procedure to call
+        args      : <tuple> positional arguments of the remote procedure
+        kwargs    : <dict>  keyword arguments of the remote procedure
 
         Returns
         -------
-        result : object
+        result : <object>
             If the call succeeds, the result of the call will be returned.
             If the call fails, `RemoteRPCError` will be raised.
         """
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
-        msg_id, msg_list = self._build_request(method, args, kwargs)
+        req_id, msg_list = self._build_request(proc_name, args, kwargs)
 
         self.socket.send_multipart(msg_list)
-        msg_list = self.socket.recv_multipart()
 
-        if not msg_list[0] == b'|':
-            raise RPCError('Unexpected reply message format in RPCClient._handle_reply')
+        while True:
+            msg_list = self.socket.recv_multipart()
+            logger.debug('received: %r' % msg_list)
 
-        #msg_id = msg_list[1]
-        status = msg_list[2]
+            reply = self._parse_reply(msg_list)
 
-        if status == b'OK':
-            result = self._serializer.deserialize_result(msg_list[3:])
-            return result
-        elif status == b'FAIL':
-            error_dict = jsonapi.loads(msg_list[3])
-            raise RemoteRPCError(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
+            if reply is None             \
+            or reply['req_id'] != req_id \
+            or reply['type']   == b'ACK':
+                continue
 
-
-class TornadoRPCClient(RPCClientBase):
+            if reply['type'] == b'OK':
+                return reply['result']
+            else:
+                raise reply['result']
+    #}
+#}
+class TornadoRPCClient(RPCClientBase):  #{
     """An asynchronous service proxy (based on Tornado IOLoop)"""
 
-    def __init__(self, context=None, ioloop=None, **kwargs):
+    def __init__(self, context=None, ioloop=None, **kwargs):  #{
         """
         Parameters
         ==========
@@ -141,46 +191,55 @@ class TornadoRPCClient(RPCClientBase):
         self.ioloop     = IOLoop.instance() if ioloop is None else ioloop
         self._callbacks = {}
         super(TornadoRPCClient, self).__init__(**kwargs)
-
-    def _create_socket(self):
+    #}
+    def _create_socket(self):  #{
         super(TornadoRPCClient, self)._create_socket()
         self.socket = ZMQStream(self.socket, self.ioloop)
         self.socket.on_recv(self._handle_reply)
+    #}
+    def _handle_reply(self, msg_list):  #{
+        logger.debug('received: %r' % msg_list)
+        reply = self._parse_reply(msg_list)
 
-    def _handle_reply(self, msg_list):
-        # msg_list[0] == b'|'
-        if not msg_list[0] == b'|':
-            logger.error('Unexpected reply message format in TornadoRPCClient._handle_reply')
+        if reply is None:
             return
-        msg_id = msg_list[1]
-        status = msg_list[2]
-        cb_eb_dc = self._callbacks.pop(msg_id, None) # (cb, eb) tuple
-        if cb_eb_dc is not None:
-            cb, eb, dc = cb_eb_dc
-            # Stop the timeout if there was one.
-            if dc is not None:
-                dc.stop()
-            if status == b'OK' and cb is not None:
-                result = self._serializer.deserialize_result(msg_list[3:])
-                try:
-                    cb(result)
-                except:
-                    logger.error('Unexpected callback error', exc_info=True)
-            elif status == b'FAIL' and eb is not None:
-                error_dict = jsonapi.loads(msg_list[3])
-                try:
-                    eb(error_dict['ename'], error_dict['evalue'], error_dict['traceback'])
-                except:
-                    logger.error('Unexpected errback error', exc_info=True)
+
+        req_id   = reply['req_id']
+        msg_type = reply['type']
+        result   = reply['result']
+
+        callbacks = self._callbacks.get(req_id)
+
+        if msg_type == b'ACK' or callbacks is None:
+            return
+
+        del self._callbacks[req_id]
+
+        ok_cb, fail_cb, tout_cb = callbacks
+
+        # stop the timeout if there was one
+        if tout_cb is not None:
+            tout_cb.stop()
+
+        if msg_type == b'OK':
+            callback = ok_cb
+        else:
+            callback = fail_cb
+
+        try:
+            callback and callback(result)
+        except:
+            logger.error('unexpected callback error', exc_info=True)
+    #}
 
     #-------------------------------------------------------------------------
     # Public API
     #-------------------------------------------------------------------------
 
-    def __getattr__(self, name):
+    def __getattr__(self, name):  #{
         return AsyncRemoteMethod(self, name)
-
-    def call(self, method, callback, errback, timeout, *args, **kwargs):
+    #}
+    def call(self, method, callback, errback, timeout, *args, **kwargs):  #{
         """Call the remote method with *args and **kwargs.
 
         Parameters
@@ -212,7 +271,7 @@ class TornadoRPCClient(RPCClientBase):
         if not (errback is None or callable(errback)):
             raise TypeError("callable or None expected, got %r" % errback)
 
-        msg_id, msg_list = self._build_request(method, args, kwargs)
+        req_id, msg_list = self._build_request(method, args, kwargs)
         self.socket.send_multipart(msg_list)
 
         # The following logic assumes that the reply won't come back too
@@ -220,48 +279,43 @@ class TornadoRPCClient(RPCClientBase):
         # be fine as this code should run very fast. This approach improves
         # latency we send the request ASAP.
         def _abort_request():
-            cb_eb_dc = self._callbacks.pop(msg_id, None)
-            if cb_eb_dc is not None:
-                eb = cb_eb_dc[1]
-                if eb is not None:
-                    try:
-                        raise RPCTimeoutError()
-                    except:
-                        etype, evalue, tb = sys.exc_info()
-                        eb(etype.__name__, evalue, traceback.format_exc(tb))
+            callbacks = self._callbacks.pop(req_id, None)
+            if callbacks:
+                err_cb = callbacks[1]
+                err_cb and err_cb(RPCTimeoutError("Timeout: t=%s, req_id=%r" % (timeout, req_id)))
+
         if timeout > 0:
-            dc = DelayedCallback(_abort_request, timeout, self.ioloop)
-            dc.start()
+            tout_cb = DelayedCallback(_abort_request, timeout, self.ioloop)
+            tout_cb.start()
         else:
-            dc = None
+            tout_cb = None
 
-        self._callbacks[msg_id] = (callback, errback, dc)
+        self._callbacks[req_id] = (callback, errback, tout_cb)
+    #}
+#}
 
-
-class RemoteMethodBase(object):
+class RemoteMethodBase(object):  #{
     """A remote method class to enable a nicer call syntax."""
 
     def __init__(self, proxy, method):
         self.proxy = proxy
         self.method = method
-
-
-class AsyncRemoteMethod(RemoteMethodBase):
+#}
+class AsyncRemoteMethod(RemoteMethodBase):  #{
 
     def __call__(self, callback, *args, **kwargs):
         return self.proxy.call(self.method, callback, *args, **kwargs)
-
-
-class RemoteMethod(RemoteMethodBase):
+#}
+class RemoteMethod(RemoteMethodBase):  #{
 
     def __call__(self, *args, **kwargs):
         return self.proxy.call(self.method, *args, **kwargs)
+#}
 
-class RPCError(Exception):
+class RPCError(Exception):  #{
     pass
-
-
-class RemoteRPCError(RPCError):
+#}
+class RemoteRPCError(RPCError):  #{
     """Error raised elsewhere"""
     ename = None
     evalue = None
@@ -282,7 +336,7 @@ class RemoteRPCError(RPCError):
             return self.traceback
         else:
             return sig
-
-class RPCTimeoutError(RPCError):
+#}
+class RPCTimeoutError(RPCError):  #{
     pass
-
+#}
