@@ -16,12 +16,10 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer, setup_logger
+from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer
 
 
 if __name__ == '__main__':
-    setup_logger()
-
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = SyncRPCClient(serializer=JSONSerializer())
