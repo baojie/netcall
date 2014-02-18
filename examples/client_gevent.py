@@ -26,6 +26,9 @@ def printer(msg, func, *args):
     print msg, '<response>', res
 
 if __name__ == '__main__':
+    #from netcall import setup_logger
+    #setup_logger()
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = GeventRPCClient(serializer=JSONSerializer())
