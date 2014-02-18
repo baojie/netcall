@@ -20,6 +20,7 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
+from abc     import abstractmethod
 from uuid    import uuid4
 from logging import getLogger
 
@@ -46,12 +47,13 @@ class RPCClientBase(RPCBase):  #{
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.setsockopt(zmq.IDENTITY, bytes(uuid4()))
     #}
-    def _build_request(self, method, args, kwargs):  #{
+    def _build_request(self, method, args, kwargs, ignore=False):  #{
         req_id = bytes(uuid4())
         method = bytes(method)
         msg_list = [b'|', req_id, method]
         data_list = self._serializer.serialize_args_kwargs(args, kwargs)
         msg_list.extend(data_list)
+        msg_list.append(bytes(int(ignore)))
         return req_id, msg_list
     #}
     def _parse_reply(self, msg_list):  #{
@@ -108,6 +110,28 @@ class RPCClientBase(RPCBase):  #{
     def __getattr__(self, name):  #{
         return RemoteMethod(self, name)
     #}
+
+    @abstractmethod
+    def call(self, proc_name, args=[], kwargs={}, ignore=False):  #{
+        """
+        Call the remote method with *args and **kwargs
+        (may raise exception)
+
+        Parameters
+        ----------
+        proc_name : <bytes> name of the remote procedure to call
+        args      : <tuple> positional arguments of the remote procedure
+        kwargs    : <dict>  keyword arguments of the remote procedure
+        ignore    : <bool>  whether to ignore result or wait for it
+
+        Returns
+        -------
+        result : <object>
+            If the call succeeds, the result of the call will be returned.
+            If the call fails, `RemoteRPCError` will be raised.
+        """
+        pass
+    #}
 #}
 class SyncRPCClient(RPCClientBase):  #{
     """A synchronous service proxy whose requests will block."""
@@ -128,7 +152,7 @@ class SyncRPCClient(RPCClientBase):  #{
         super(SyncRPCClient, self).__init__(**kwargs)
     #}
 
-    def call(self, proc_name, *args, **kwargs):  #{
+    def call(self, proc_name, args=[], kwargs={}, ignore=False):  #{
         """
         Call the remote method with *args and **kwargs
         (may raise exception)
@@ -148,7 +172,7 @@ class SyncRPCClient(RPCClientBase):  #{
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
-        req_id, msg_list = self._build_request(proc_name, args, kwargs)
+        req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
 
         self.socket.send_multipart(msg_list)
 
@@ -158,10 +182,15 @@ class SyncRPCClient(RPCClientBase):  #{
 
             reply = self._parse_reply(msg_list)
 
-            if reply is None             \
-            or reply['req_id'] != req_id \
-            or reply['type']   == b'ACK':
+            if reply is None \
+            or reply['req_id'] != req_id:
                 continue
+
+            if reply['type'] == b'ACK':
+                if ignore:
+                    return None
+                else:
+                    continue
 
             if reply['type'] == b'OK':
                 return reply['result']
@@ -239,40 +268,40 @@ class TornadoRPCClient(RPCClientBase):  #{
     def __getattr__(self, name):  #{
         return AsyncRemoteMethod(self, name)
     #}
-    def call(self, method, callback, errback, timeout, *args, **kwargs):  #{
+    def call(self, proc_name, args=[], kwargs={}, callback=None, errback=None, ignore=False, timeout=None):  #{
         """Call the remote method with *args and **kwargs.
 
         Parameters
         ----------
-        method : str
-            The name of the remote method to call.
-        callback : callable
+        proc_name : <str> name of the remote procedure to call
+        args      : <tuple> positional arguments of the procedure
+        kwargs    : <dict> keyword arguments of the procedure
+        ignore    : <bool>  whether to ignore result or wait for it
+        callback  : <callable>
             The callable to call upon success or None. The result of the RPC
             call is passed as the single argument to the callback:
             `callback(result)`.
-        errback : callable
+        errback   : <callable>
             The callable to call upon a remote exception or None, The
             signature of this method is `errback(ename, evalue, tb)` where
             the arguments are passed as strings.
-        timeout : int
+        timeout   : <int>
             The number of milliseconds to wait before aborting the request.
             When a request is aborted, the errback will be called with an
-            RPCTimeoutError. Set to 0 or a negative number to use an infinite
-            timeout.
-        args : tuple
-            The tuple of arguments to pass as `*args` to the RPC method.
-        kwargs : dict
-            The dict of arguments to pass as `**kwargs` to the RPC method.
+            RPCTimeoutError. Set to None, 0 or a negative number to disable.
         """
-        if not isinstance(timeout, int):
-            raise TypeError("int expected, got %r" % timeout)
+        if not (timeout is None or isinstance(timeout, int)):
+            raise TypeError("int or None expected, got %r" % timeout)
         if not (callback is None or callable(callback)):
             raise TypeError("callable or None expected, got %r" % callback)
         if not (errback is None or callable(errback)):
             raise TypeError("callable or None expected, got %r" % errback)
 
-        req_id, msg_list = self._build_request(method, args, kwargs)
+        req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
         self.socket.send_multipart(msg_list)
+
+        if ignore:
+            return None
 
         # The following logic assumes that the reply won't come back too
         # quickly, otherwise the callbacks won't be in place in time. It should
@@ -283,6 +312,8 @@ class TornadoRPCClient(RPCClientBase):  #{
             if callbacks:
                 err_cb = callbacks[1]
                 err_cb and err_cb(RPCTimeoutError("Timeout: t=%s, req_id=%r" % (timeout, req_id)))
+
+        timeout = timeout or 0
 
         if timeout > 0:
             tout_cb = DelayedCallback(_abort_request, timeout, self.ioloop)
@@ -297,19 +328,19 @@ class TornadoRPCClient(RPCClientBase):  #{
 class RemoteMethodBase(object):  #{
     """A remote method class to enable a nicer call syntax."""
 
-    def __init__(self, proxy, method):
-        self.proxy = proxy
+    def __init__(self, client, method):
+        self.client = client
         self.method = method
 #}
 class AsyncRemoteMethod(RemoteMethodBase):  #{
 
     def __call__(self, callback, *args, **kwargs):
-        return self.proxy.call(self.method, callback, *args, **kwargs)
+        return self.client.call(self.method, args, kwargs, callback=callback)
 #}
 class RemoteMethod(RemoteMethodBase):  #{
 
     def __call__(self, *args, **kwargs):
-        return self.proxy.call(self.method, *args, **kwargs)
+        return self.client.call(self.method, args, kwargs)
 #}
 
 class RPCError(Exception):  #{

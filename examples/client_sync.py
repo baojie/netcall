@@ -20,6 +20,9 @@ from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer
 
 
 if __name__ == '__main__':
+    from netcall import setup_logger
+    setup_logger()
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = SyncRPCClient(serializer=JSONSerializer())
@@ -32,6 +35,8 @@ if __name__ == '__main__':
         print e.ename
         print e.evalue
         print e.traceback
+
+    echo.call('error', ignore=True)
 
     math = SyncRPCClient()
     # By connecting to two instances, requests are load balanced.

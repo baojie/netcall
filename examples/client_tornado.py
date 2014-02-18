@@ -33,6 +33,8 @@ if __name__ == '__main__':
     echo.echo(print_result, print_error, 0, "Hi there")
 
     echo.error(print_result, print_error, 0)
+    echo.call(print_result, print_error, 0, 'error', ignore=True)
+
     # Sleep for 2.0s but timeout after 1000ms.
     echo.sleep(print_result, print_error, 1000, 2.0)
 

@@ -40,6 +40,8 @@ if __name__ == '__main__':
         print e.evalue
         print e.traceback
 
+    echo.call('error', ignore=True)
+
     tasks.append(spawn(printer, "[echo] Sleeping for 2 seconds...", echo.sleep, 2.0))
 
     math = GeventRPCClient()

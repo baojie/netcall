@@ -109,7 +109,7 @@ class RPCServiceBase(RPCBase):  #{
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <ser_args>, <ser_kwargs>, <ignore>]
 
         Returns either a None or a dict {
             'route'  : [<id:bytes>, ...],  # list of all dealer ids (a return path)
@@ -117,24 +117,30 @@ class RPCServiceBase(RPCBase):  #{
             'proc'   : <callable>,         # a task callable
             'args'   : [<arg1>, ...],      # positional arguments
             'kwargs' : {<kw1>, ...},       # keyword arguments
+            'ignore' : <bool>,             # ignore result flag
             'error'  : None or <Exception>
         }
         """
-        if len(msg_list) < 5 or b'|' not in msg_list:
+        if len(msg_list) < 6 or b'|' not in msg_list:
             logger.error('bad request: %r' % msg_list)
             return None
 
         error    = None
+        args     = None
+        kwargs   = None
+        ignore   = None
         boundary = msg_list.index(b'|')
         name     = msg_list[boundary+2]
         proc     = self.procedures.get(name, None)
-        if proc is None:
-            error = NotImplementedError("Unregistered procedure %r" % name)
-        data     = msg_list[boundary+3:]
         try:
+            data = msg_list[boundary+3:boundary+5]
             args, kwargs = self._serializer.deserialize_args_kwargs(data)
+            ignore       = bool(int(msg_list[boundary+5]))
         except Exception, e:
             error = e
+
+        if proc is None:
+            error = NotImplementedError("Unregistered procedure %r" % name)
 
         return dict(
             route  = msg_list[0:boundary],
@@ -142,6 +148,7 @@ class RPCServiceBase(RPCBase):  #{
             proc   = proc,
             args   = args,
             kwargs = kwargs,
+            ignore = ignore,
             error  = error,
         )
     #}
@@ -281,7 +288,7 @@ class TornadoRPCService(RPCServiceBase):  #{
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <ser_args>, <ser_kwargs>, <ignore>]
 
         First, the service sends back a notification that the message was
         indeed received:
@@ -300,6 +307,8 @@ class TornadoRPCService(RPCServiceBase):  #{
             return
         self._send_ack(req)
 
+        ignore = req['ignore']
+
         try:
             # raise any parsing errors here
             if req['error']:
@@ -307,17 +316,17 @@ class TornadoRPCService(RPCServiceBase):  #{
             # call procedure
             res = req['proc'](*req['args'], **req['kwargs'])
         except Exception:
-            self._send_fail(req)
+            not ignore and self._send_fail(req)
         else:
             def send_future_result(fut):
                 try:    res = fut.result()
-                except: self._send_fail(req)
-                else:   self._send_ok(req, res)
+                except: not ignore and self._send_fail(req)
+                else:   not ignore and self._send_ok(req, res)
 
             if isinstance(res, Future):
                 self.ioloop.add_future(res, send_future_result)
             else:
-                self._send_ok(req, res)
+                not ignore and self._send_ok(req, res)
     #}
     def start(self):  #{
         """ Start the RPC service (non-blocking) """

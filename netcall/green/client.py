@@ -41,7 +41,7 @@ class GeventRPCClient(RPCClientBase):
         Uses the Gevent compatibility layer of pyzmq (zmq.green).
     """
 
-    def __init__(self, context=None, **kwargs):
+    def __init__(self, context=None, **kwargs):  #{
         """
         Parameters
         ==========
@@ -59,26 +59,26 @@ class GeventRPCClient(RPCClientBase):
         self.greenlet  = spawn(self._reader)
         self._results  = {}    # {<msg-id> : <gevent.AsyncResult>}
         super(GeventRPCClient, self).__init__(**kwargs)  # base class
-
-    def _create_socket(self):
+    #}
+    def _create_socket(self):  #{
         super(GeventRPCClient, self)._create_socket()
-
-    def bind(self, url):
+    #}
+    def bind(self, url):  #{
         result = super(GeventRPCClient, self).bind(url)
         self._ready_ev.set()  # wake up _reader
         return result
-
-    def bind_ports(self, *args, **kwargs):
+    #}
+    def bind_ports(self, *args, **kwargs):  #{
         result = super(GeventRPCClient, self).bind_ports(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
-
-    def connect(self, url):
+    #}
+    def connect(self, url):  #{
         result = super(GeventRPCClient, self).connect(url)
         self._ready_ev.set()  # wake up _reader
         return result
-
-    def _reader(self):
+    #}
+    def _reader(self):  #{
         """ Reader greenlet
 
             Waits for a socket to become ready (._ready_ev), then reads incoming replies and
@@ -126,16 +126,16 @@ class GeventRPCClient(RPCClientBase):
                     async.set_exception(result)
 
         logger.warning('_reader exited')
-
-    def shutdown(self):
+    #}
+    def shutdown(self):  #{
         """Close the socket and signal the reader greenlet to exit"""
         self._ready = False
         self._exit_ev.set()
         self._ready_ev.set()
         self.socket.close()
         self._ready_ev.clear()
-
-    def call(self, method, *args, **kwargs):
+    #}
+    def call(self, method, args=[], kwargs={}, ignore=False):  #{
         """Call the remote method with *args and **kwargs.
 
         Parameters
@@ -156,9 +156,14 @@ class GeventRPCClient(RPCClientBase):
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
-        msg_id, msg_list = self._build_request(method, args, kwargs)
-        result = AsyncResult()
-        self._results[msg_id] = result
+        msg_id, msg_list = self._build_request(method, args, kwargs, ignore)
 
         self.socket.send_multipart(msg_list)
-        return result.get()  # block waiting for a reply passed by ._reader
+
+        if ignore:
+            return None
+        else:
+            result = AsyncResult()
+            self._results[msg_id] = result
+            return result.get()  # block waiting for a reply passed by ._reader
+    #}

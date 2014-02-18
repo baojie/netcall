@@ -66,7 +66,7 @@ class GeventRPCService(RPCServiceBase):
 
         The request is received as a multipart message:
 
-        [<id>..<id>, b'|', req_id, proc_name, <serialized args & kwargs>]
+        [<id>..<id>, b'|', req_id, proc_name, <ser_args>, <ser_kwargs>, <ignore>]
 
         First, the service sends back a notification that the message was
         indeed received:
@@ -85,6 +85,8 @@ class GeventRPCService(RPCServiceBase):
             return
         self._send_ack(req)
 
+        ignore = req['ignore']
+
         try:
             # raise any parsing errors here
             if req['error']:
@@ -92,9 +94,9 @@ class GeventRPCService(RPCServiceBase):
             # call procedure
             res = req['proc'](*req['args'], **req['kwargs'])
         except Exception:
-            self._send_fail(req)
+            not ignore and self._send_fail(req)
         else:
-            self._send_ok(req, res)
+            not ignore and self._send_ok(req, res)
     #}
     def start(self):  #{
         """ Start the RPC service (non-blocking).
