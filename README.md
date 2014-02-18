@@ -42,7 +42,7 @@ echo.start()
 echo.serve()
 ```
 
-To talk to this service::
+To talk to this service:
 
 ```python
 from netcall.green import GeventRPCClient
