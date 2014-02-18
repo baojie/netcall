@@ -68,7 +68,7 @@ def setup_logger(logger=logger, level=DEBUG, stream=stderr):  #{
     from logging import StreamHandler, Formatter
 
     handler   = StreamHandler(stream)
-    formatter = Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    formatter = Formatter("%(levelname)s:%(name)s:%(message)s")
     handler.setLevel(level)
     handler.setFormatter(formatter)
     logger.setLevel(level)

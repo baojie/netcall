@@ -16,10 +16,13 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer
+from netcall import SyncRPCClient, RemoteRPCError, RPCTimeoutError, JSONSerializer
 
 
 if __name__ == '__main__':
+    #from netcall import setup_logger
+    #setup_logger()
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = SyncRPCClient(serializer=JSONSerializer())
@@ -28,10 +31,16 @@ if __name__ == '__main__':
     try:
         echo.error()
     except RemoteRPCError, e:
-        print "Got a remote exception:"
+        print "Got an expected remote exception:"
         print e.ename
         print e.evalue
         print e.traceback
+
+    try:
+        echo.call('sleep', args=[2.3], timeout=1.1)
+    except RPCTimeoutError, e:
+        print "Got an expected timeout:"
+        print repr(e)
 
     echo.call('error', ignore=True)
 

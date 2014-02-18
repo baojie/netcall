@@ -21,6 +21,7 @@ Authors:
 #-----------------------------------------------------------------------------
 
 from abc     import abstractmethod
+from time    import time
 from random  import randint
 from logging import getLogger
 
@@ -154,7 +155,7 @@ class SyncRPCClient(RPCClientBase):  #{
         super(SyncRPCClient, self).__init__(**kwargs)
     #}
 
-    def call(self, proc_name, args=[], kwargs={}, ignore=False):  #{
+    def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
         """
         Call the remote method with *args and **kwargs
         (may raise exception)
@@ -164,13 +165,20 @@ class SyncRPCClient(RPCClientBase):  #{
         proc_name : <bytes> name of the remote procedure to call
         args      : <tuple> positional arguments of the remote procedure
         kwargs    : <dict>  keyword arguments of the remote procedure
+        timeout : <float> | None
+            Number of seconds to wait for a reply.
+            RPCTimeoutError will be raised if no reply is received in time.
+            Set to None, 0 or a negative number to disable.
 
         Returns
         -------
-        result : <object>
+        <object>
             If the call succeeds, the result of the call will be returned.
             If the call fails, `RemoteRPCError` will be raised.
         """
+        if not (timeout is None or isinstance(timeout, (int, float))):
+            raise TypeError("timeout param: <float> or None expected, got %r" % timeout)
+
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
@@ -178,8 +186,25 @@ class SyncRPCClient(RPCClientBase):  #{
 
         self.socket.send_multipart(msg_list)
 
+        if timeout and timeout > 0:
+            poller = zmq.Poller()
+            poller.register(self.socket, zmq.POLLIN)
+            start_t    = time()
+            deadline_t = start_t + timeout
+
+            def recv_multipart():
+                timeout_ms = int((deadline_t - time())*1000)  # in milliseconds
+                #logger.debug('polling with timeout_ms=%s' % timeout_ms)
+                if timeout_ms > 0 and poller.poll(timeout_ms):
+                    msg = self.socket.recv_multipart()
+                    return msg
+                else:
+                    raise RPCTimeoutError("Request %s timed out after %s sec" % (req_id, timeout))
+        else:
+            recv_multipart = self.socket.recv_multipart
+
         while True:
-            msg_list = self.socket.recv_multipart()
+            msg_list = recv_multipart()
             logger.debug('received: %r' % msg_list)
 
             reply = self._parse_reply(msg_list)
@@ -272,16 +297,16 @@ class TornadoRPCClient(RPCClientBase):  #{
 
         Parameters
         ----------
-        proc_name : <str> name of the remote procedure to call
+        proc_name : <str>   name of the remote procedure to call
         args      : <tuple> positional arguments of the procedure
-        kwargs    : <dict> keyword arguments of the procedure
+        kwargs    : <dict>  keyword arguments of the procedure
         ignore    : <bool>  whether to ignore result or wait for it
         timeout   : <float> | None
-            The number of seconds to wait before aborting the request.
+            Number of seconds to wait for a reply.
             RPCTimeoutError is set as the future result in case of timeout.
             Set to None, 0 or a negative number to disable.
 
-        Returns None or a <Future> representing future result
+        Returns None or a <Future> representing a remote call result
         """
         if not (timeout is None or isinstance(timeout, (int, float))):
             raise TypeError("timeout param: <float> or None expected, got %r" % timeout)
@@ -300,7 +325,7 @@ class TornadoRPCClient(RPCClientBase):  #{
             future_tout = self._futures.pop(req_id, None)
             if future_tout:
                 future, _ = future_tout
-                tout_msg  = "Request %s timed out (%s sec)" % (req_id, timeout)
+                tout_msg  = "Request %s timed out after %s sec" % (req_id, timeout)
                 logger.debug(tout_msg)
                 future.set_exception(RPCTimeoutError(tout_msg))
 
