@@ -21,7 +21,7 @@ Authors:
 #-----------------------------------------------------------------------------
 
 from abc     import abstractmethod
-from uuid    import uuid4
+from random  import randint
 from logging import getLogger
 
 from tornado.concurrent import Future
@@ -47,10 +47,10 @@ class RPCClientBase(RPCBase):  #{
 
     def _create_socket(self):  #{
         self.socket = self.context.socket(zmq.DEALER)
-        self.socket.setsockopt(zmq.IDENTITY, bytes(uuid4()))
+        self.socket.setsockopt(zmq.IDENTITY, self.identity)
     #}
     def _build_request(self, method, args, kwargs, ignore=False):  #{
-        req_id = bytes(uuid4())
+        req_id = b'%x' % randint(0, 0xFFFFFFFF)
         method = bytes(method)
         msg_list = [b'|', req_id, method]
         data_list = self._serializer.serialize_args_kwargs(args, kwargs)
@@ -276,15 +276,15 @@ class TornadoRPCClient(RPCClientBase):  #{
         args      : <tuple> positional arguments of the procedure
         kwargs    : <dict> keyword arguments of the procedure
         ignore    : <bool>  whether to ignore result or wait for it
-        timeout   : <int>
-            The number of milliseconds to wait before aborting the request.
-            When a request is aborted, the errback will be called with an
-            RPCTimeoutError. Set to None, 0 or a negative number to disable.
+        timeout   : <float> | None
+            The number of seconds to wait before aborting the request.
+            RPCTimeoutError is set as the future result in case of timeout.
+            Set to None, 0 or a negative number to disable.
 
         Returns None or a <Future> representing future result
         """
-        if not (timeout is None or isinstance(timeout, int)):
-            raise TypeError("int or None expected, got %r" % timeout)
+        if not (timeout is None or isinstance(timeout, (int, float))):
+            raise TypeError("timeout param: <float> or None expected, got %r" % timeout)
 
         req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
         self.socket.send_multipart(msg_list)
@@ -297,15 +297,17 @@ class TornadoRPCClient(RPCClientBase):  #{
         # be fine as this code should run very fast. This approach improves
         # latency we send the request ASAP.
         def _abort_request():
-            future, _ = self._futures.pop(req_id, None)
-            if future:
-                err = RPCTimeoutError("Timeout: t=%s, req_id=%r" % (timeout, req_id))
-                future.set_exception(err)
+            future_tout = self._futures.pop(req_id, None)
+            if future_tout:
+                future, _ = future_tout
+                tout_msg  = "Request %s timed out (%s sec)" % (req_id, timeout)
+                logger.debug(tout_msg)
+                future.set_exception(RPCTimeoutError(tout_msg))
 
         timeout = timeout or 0
 
         if timeout > 0:
-            tout_cb = DelayedCallback(_abort_request, timeout, self.ioloop)
+            tout_cb = DelayedCallback(_abort_request, int(timeout*1000), self.ioloop)
             tout_cb.start()
         else:
             tout_cb = None

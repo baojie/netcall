@@ -26,7 +26,6 @@ import traceback
 from itertools import chain
 from functools import partial
 from logging   import getLogger
-from uuid      import uuid1
 from abc       import abstractmethod
 
 import zmq
@@ -66,7 +65,7 @@ class RPCServiceBase(RPCBase):  #{
         super(RPCServiceBase, self).__init__(*args, **kwargs)
 
         self.service_id = service_id \
-                       or b'%s/%s' % (self.__class__.__name__, uuid1())
+                       or b'%s/%s' % (self.__class__.__name__, self.identity)
         self.procedures = {}  # {<name> : <callable>}
 
         # register extra class methods as service procedures

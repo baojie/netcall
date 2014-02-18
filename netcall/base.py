@@ -19,7 +19,8 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from abc import ABCMeta, abstractmethod
+from abc    import ABCMeta, abstractmethod
+from random import randint
 
 import zmq
 from zmq.eventloop.zmqstream import ZMQStream
@@ -34,7 +35,7 @@ from .serializer import PickleSerializer
 class RPCBase(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, serializer=None):  #{
+    def __init__(self, serializer=None, identity=None):  #{
         """Base class for RPC service and proxy.
 
         Parameters
@@ -42,7 +43,9 @@ class RPCBase(object):
         serializer : [optional] <Serializer>
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
+        identity   : [optional] <bytes>
         """
+        self.identity    = identity or b'%08x' % randint(0, 0xFFFFFFFF)
         self.socket      = None
         self._ready      = False
         self._serializer = serializer if serializer is not None else PickleSerializer()
@@ -50,6 +53,7 @@ class RPCBase(object):
     #}
     @abstractmethod
     def _create_socket(self):  #{
+        "A subclass has to create a socket here"
         self._ready = False
     #}
 
