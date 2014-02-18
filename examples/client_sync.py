@@ -20,9 +20,6 @@ from netcall import SyncRPCClient, RemoteRPCError, JSONSerializer
 
 
 if __name__ == '__main__':
-    from netcall import setup_logger
-    setup_logger()
-
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = SyncRPCClient(serializer=JSONSerializer())
@@ -44,5 +41,5 @@ if __name__ == '__main__':
     math.connect('tcp://127.0.0.1:5557')
     for i in range(5):
         for j in range(5):
-            print "Adding: ", i, j, math.add(i,j)
+            print "Adding: ", i, j, '=', math.add(i,j)
 

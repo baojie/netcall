@@ -40,6 +40,9 @@ def printer(client, name, *args, **kwargs):
         print e.ename
         print e.evalue
         print e.traceback
+    except Exception, e:
+        print "Got an exception:"
+        print repr(e)
     else:
         print '<reply>', name, args, kwargs, '-->', res
 
@@ -47,6 +50,10 @@ def print_error(err):
     print "Got error:", err
 
 if __name__ == '__main__':
+    #from logging import getLogger, DEBUG
+    #logger = getLogger('netcall')
+    #logger.setLevel(DEBUG)
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
     echo = TornadoRPCClient(serializer=JSONSerializer())
@@ -56,8 +63,8 @@ if __name__ == '__main__':
     spawn(printer, echo, 'error')
     spawn(printer, echo, 'error', ignore=True)
 
-    # Sleep for 2.0s but timeout after 1000ms.
-    spawn(printer, echo, 'sleep', [2], timeout=1000)
+    # Sleep for 2.3 sec but timeout after 1.1 sec.
+    spawn(printer, echo, 'sleep', [2.3], timeout=1.1)
 
     math = TornadoRPCClient()
     # By connecting to two instances, requests are load balanced.
