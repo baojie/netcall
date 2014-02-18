@@ -24,10 +24,10 @@ from logging import getLogger
 
 from zmq import green
 
-from gevent       import spawn
+from gevent       import spawn, spawn_later
 from gevent.event import Event, AsyncResult
 
-from ..client import RPCClientBase
+from ..client import RPCClientBase, RPCTimeoutError
 
 
 logger = getLogger("netcall")
@@ -119,6 +119,9 @@ class GeventRPCClient(RPCClientBase):
                     continue
 
                 async = results.pop(req_id, None)
+                if async is None:
+                    # result is gone, must be a timeout
+                    continue
 
                 if msg_type == b'OK':
                     async.set(result)
@@ -135,35 +138,50 @@ class GeventRPCClient(RPCClientBase):
         self.socket.close()
         self._ready_ev.clear()
     #}
-    def call(self, method, args=[], kwargs={}, ignore=False):  #{
-        """Call the remote method with *args and **kwargs.
+    def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
+        """
+        Call the remote method with *args and **kwargs.
 
         Parameters
         ----------
-        method : str
-            The name of the remote method to call.
-        args : tuple
-            The tuple of arguments to pass as `*args` to the RPC method.
-        kwargs : dict
-            The dict of arguments to pass as `**kwargs` to the RPC method.
+        proc_name : <str>   name of the remote procedure to call
+        args      : <tuple> positional arguments of the procedure
+        kwargs    : <dict>  keyword arguments of the procedure
+        ignore    : <bool>  whether to ignore result or wait for it
+        timeout   : <float> | None
+            Number of seconds to wait for a reply.
+            RPCTimeoutError is set as the future result in case of timeout.
+            Set to None, 0 or a negative number to disable.
 
         Returns
         -------
-        result : object
+        <object>
             If the call succeeds, the result of the call will be returned.
             If the call fails, `RemoteRPCError` will be raised.
         """
+        if not (timeout is None or isinstance(timeout, (int, float))):
+            raise TypeError("timeout param: <float> or None expected, got %r" % timeout)
+
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
-        msg_id, msg_list = self._build_request(method, args, kwargs, ignore)
+        req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
 
         self.socket.send_multipart(msg_list)
 
         if ignore:
             return None
-        else:
-            result = AsyncResult()
-            self._results[msg_id] = result
-            return result.get()  # block waiting for a reply passed by ._reader
+
+        if timeout and timeout > 0:
+            def _abort_request():
+                result = self._results.pop(req_id, None)
+                if result:
+                    tout_msg  = "Request %s timed out after %s sec" % (req_id, timeout)
+                    logger.debug(tout_msg)
+                    result.set_exception(RPCTimeoutError(tout_msg))
+            spawn_later(timeout, _abort_request)
+
+        result = AsyncResult()
+        self._results[req_id] = result
+        return result.get()  # block waiting for a reply passed by ._reader
     #}

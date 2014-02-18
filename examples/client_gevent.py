@@ -17,7 +17,7 @@
 #-----------------------------------------------------------------------------
 
 from gevent        import spawn, joinall
-from netcall.green import GeventRPCClient, RemoteRPCError, JSONSerializer
+from netcall.green import GeventRPCClient, RemoteRPCError, RPCTimeoutError, JSONSerializer
 
 def printer(msg, func, *args):
     "run a function, print results"
@@ -35,10 +35,16 @@ if __name__ == '__main__':
     try:
         echo.error()
     except RemoteRPCError, e:
-        print "Got a remote exception:"
+        print "Got an expected remote exception:"
         print e.ename
         print e.evalue
         print e.traceback
+
+    try:
+        echo.call('sleep', args=[2.3], timeout=1.1)
+    except RPCTimeoutError, e:
+        print "Got an expected timeout:"
+        print repr(e)
 
     echo.call('error', ignore=True)
 
@@ -56,3 +62,4 @@ if __name__ == '__main__':
             )
 
     joinall(tasks)
+
