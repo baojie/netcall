@@ -24,6 +24,8 @@ from abc     import abstractmethod
 from uuid    import uuid4
 from logging import getLogger
 
+from tornado.concurrent import Future
+
 import zmq
 
 from zmq.eventloop.zmqstream import ZMQStream
@@ -216,9 +218,9 @@ class TornadoRPCClient(RPCClientBase):  #{
             and deserialize args, kwargs and the result.
         """
         assert context is None or isinstance(context, zmq.Context)
-        self.context    = context if context is not None else zmq.Context.instance()
-        self.ioloop     = IOLoop.instance() if ioloop is None else ioloop
-        self._callbacks = {}
+        self.context  = context if context is not None else zmq.Context.instance()
+        self.ioloop   = IOLoop.instance() if ioloop is None else ioloop
+        self._futures = {}  # {<req_id> : <Future>}
         super(TornadoRPCClient, self).__init__(**kwargs)
     #}
     def _create_socket(self):  #{
@@ -237,28 +239,24 @@ class TornadoRPCClient(RPCClientBase):  #{
         msg_type = reply['type']
         result   = reply['result']
 
-        callbacks = self._callbacks.get(req_id)
-
-        if msg_type == b'ACK' or callbacks is None:
+        if msg_type == b'ACK':
             return
 
-        del self._callbacks[req_id]
+        future_tout = self._futures.pop(req_id, None)
 
-        ok_cb, fail_cb, tout_cb = callbacks
+        if future_tout is None:
+            return
 
-        # stop the timeout if there was one
+        future, tout_cb = future_tout
+
+        # stop the timeout if there is one
         if tout_cb is not None:
             tout_cb.stop()
 
         if msg_type == b'OK':
-            callback = ok_cb
+            future.set_result(result)
         else:
-            callback = fail_cb
-
-        try:
-            callback and callback(result)
-        except:
-            logger.error('unexpected callback error', exc_info=True)
+            future.set_exception(result)
     #}
 
     #-------------------------------------------------------------------------
@@ -268,8 +266,9 @@ class TornadoRPCClient(RPCClientBase):  #{
     def __getattr__(self, name):  #{
         return AsyncRemoteMethod(self, name)
     #}
-    def call(self, proc_name, args=[], kwargs={}, callback=None, errback=None, ignore=False, timeout=None):  #{
-        """Call the remote method with *args and **kwargs.
+    def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
+        """
+        Call the remote method with *args and **kwargs.
 
         Parameters
         ----------
@@ -277,25 +276,15 @@ class TornadoRPCClient(RPCClientBase):  #{
         args      : <tuple> positional arguments of the procedure
         kwargs    : <dict> keyword arguments of the procedure
         ignore    : <bool>  whether to ignore result or wait for it
-        callback  : <callable>
-            The callable to call upon success or None. The result of the RPC
-            call is passed as the single argument to the callback:
-            `callback(result)`.
-        errback   : <callable>
-            The callable to call upon a remote exception or None, The
-            signature of this method is `errback(ename, evalue, tb)` where
-            the arguments are passed as strings.
         timeout   : <int>
             The number of milliseconds to wait before aborting the request.
             When a request is aborted, the errback will be called with an
             RPCTimeoutError. Set to None, 0 or a negative number to disable.
+
+        Returns None or a <Future> representing future result
         """
         if not (timeout is None or isinstance(timeout, int)):
             raise TypeError("int or None expected, got %r" % timeout)
-        if not (callback is None or callable(callback)):
-            raise TypeError("callable or None expected, got %r" % callback)
-        if not (errback is None or callable(errback)):
-            raise TypeError("callable or None expected, got %r" % errback)
 
         req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
         self.socket.send_multipart(msg_list)
@@ -308,10 +297,10 @@ class TornadoRPCClient(RPCClientBase):  #{
         # be fine as this code should run very fast. This approach improves
         # latency we send the request ASAP.
         def _abort_request():
-            callbacks = self._callbacks.pop(req_id, None)
-            if callbacks:
-                err_cb = callbacks[1]
-                err_cb and err_cb(RPCTimeoutError("Timeout: t=%s, req_id=%r" % (timeout, req_id)))
+            future, _ = self._futures.pop(req_id, None)
+            if future:
+                err = RPCTimeoutError("Timeout: t=%s, req_id=%r" % (timeout, req_id))
+                future.set_exception(err)
 
         timeout = timeout or 0
 
@@ -321,7 +310,10 @@ class TornadoRPCClient(RPCClientBase):  #{
         else:
             tout_cb = None
 
-        self._callbacks[req_id] = (callback, errback, tout_cb)
+        future = Future()
+        self._futures[req_id] = (future, tout_cb)
+
+        return future
     #}
 #}
 
