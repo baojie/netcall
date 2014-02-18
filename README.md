@@ -5,8 +5,8 @@ system based on [ZeroMQ](http://zeromq.org/tutorials:dealer-and-router)
 and [IOLoop](http://zeromq.github.io/pyzmq/api/generated/zmq.eventloop.ioloop.html#zmq.eventloop.ioloop.ZMQIOLoop)/[Gevent](http://www.gevent.org/).
 
 Initially the code was forked from [ZPyRPC](https://github.com/ellisonbg/zpyrpc) in Feb 2014.
-The fork has added [Gevent](http://www.gevent.org/) support, refactored code, made incompatible API changes
-and added new examples.
+The fork has added [Gevent](http://www.gevent.org/) support, refactored code, made incompatible API changes,
+added new features and examples.
 
 ## Feature Overview
 
