@@ -49,6 +49,8 @@ class RPCBase(object):
         self.socket      = None
         self._ready      = False
         self._serializer = serializer if serializer is not None else PickleSerializer()
+        self.bound       = set()
+        self.connected   = set()
         self.reset()
     #}
     @abstractmethod
@@ -64,16 +66,58 @@ class RPCBase(object):
     def reset(self):  #{
         """Reset the socket/stream."""
         if isinstance(self.socket, (zmq.Socket, ZMQStream)):
-            self.socket.close()
+            self.socket.close(linger=0)
         self._create_socket()
-        self.urls = []
+        self._ready    = False
+        self.bound     = set()
+        self.connected = set()
     #}
-    def bind(self, url):  #{
-        """Bind the service to a url of the form proto://ip:port."""
-        self.socket.bind(url)
-        self.urls.append(url)
-        self._ready = True
+
+    def bind(self, urls, only=False):  #{
+        """Bind the service to a number of urls of the form proto://address"""
+        if isinstance(urls, basestring):
+            urls = [urls]
+
+        urls  = set(urls)
+        bound = self.bound
+
+        fresh = urls - bound
+        for url in fresh:
+            self.socket.bind(url)
+            bound.add(url)
+
+        if only:
+            stale = bound - urls
+            for url in stale:
+                try:    self.socket.unbind(url)
+                except: pass
+                bound.remove(url)
+
+        self._ready = bool(bound)
     #}
+    def connect(self, urls, only=False):  #{
+        """Connect the service to a number of urls of the form proto://address"""
+        if isinstance(urls, basestring):
+            urls = [urls]
+
+        urls      = set(urls)
+        connected = self.connected
+
+        fresh = urls - connected
+        for url in fresh:
+            self.socket.connect(url)
+            connected.add(url)
+
+        if only:
+            stale = connected - urls
+            for url in stale:
+                try:    self.socket.disconnect(url)
+                except: pass
+                connected.remove(url)
+
+        self._ready = bool(connected)
+    #}
+
     def bind_ports(self, ip, ports):  #{
         """Try to bind a socket to the first available tcp port.
 
@@ -109,14 +153,8 @@ class RPCBase(object):
             raise zmq.ZMQBindError('Could not find an available port')
 
         url = 'tcp://%s:%i' % (ip, port)
-        self.urls.append(url)
+        self.bound.add(url)
         self._ready = True
 
         return port
-    #}
-    def connect(self, url):  #{
-        """Connect the service to a url of the form proto://ip:port."""
-        self.socket.connect(url)
-        self.urls.append(url)
-        self._ready = True
     #}

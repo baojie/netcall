@@ -47,6 +47,8 @@ class RPCClientBase(RPCBase):  #{
     """A service proxy to for talking to an RPCService."""
 
     def _create_socket(self):  #{
+        super(RPCClientBase, self)._create_socket()
+
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.setsockopt(zmq.IDENTITY, self.identity)
     #}
@@ -136,6 +138,7 @@ class RPCClientBase(RPCBase):  #{
         pass
     #}
 #}
+
 class SyncRPCClient(RPCClientBase):  #{
     """A synchronous service proxy whose requests will block."""
 
