@@ -23,12 +23,12 @@ echo = GeventRPCService(serializer=JSONSerializer())
 
 @echo.task(name='echo')
 def echo_echo(s):
-    print "%r echo %r" % (echo.urls, s)
+    print "%r echo %r" % (echo.bound, s)
     return s
 
 @echo.task(name='sleep')
 def echo_sleep(t):
-    print "%r sleep %s" % (echo.urls, t)
+    print "%r sleep %s" % (echo.bound, t)
     gevent_sleep(t)
     print "end of sleep"
     return t
@@ -41,19 +41,19 @@ def echo_error():
 class Math(GeventRPCService):
 
     def add(self, a, b):
-        print "%r add %r %r" % (self.urls, a, b)
+        print "%r add %r %r" % (self.bound, a, b)
         return a+b
 
     def subtract(self, a, b):
-        print "%r subtract %r %r" % (self.urls, a, b)
+        print "%r subtract %r %r" % (self.bound, a, b)
         return a-b
 
     def multiply(self, a, b):
-        print "%r multiply %r %r" % (self.urls, a, b)
+        print "%r multiply %r %r" % (self.bound, a, b)
         return a*b
 
     def divide(self, a, b):
-        print "%r divide %r %r" % (self.urls, a, b)
+        print "%r divide %r %r" % (self.bound, a, b)
         return a/b
 
 

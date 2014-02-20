@@ -30,11 +30,11 @@ from netcall.green import GeventRPCService, JSONSerializer
 class EchoService(GeventRPCService):
 
     def echo(self, s):
-        print "<pid:%s> %r echo %r" % (getpid(), self.urls, s)
+        print "<pid:%s> %r echo %r" % (getpid(), self.bound, s)
         return s
 
     def sleep(self, t):
-        print "<pid:%s> %r sleep %s" % (getpid(), self.urls, t)
+        print "<pid:%s> %r sleep %s" % (getpid(), self.bound, t)
         gevent_sleep(t)
 
     def error(self):
@@ -43,19 +43,19 @@ class EchoService(GeventRPCService):
 class MathService(GeventRPCService):
 
     def add(self, a, b):
-        print "<pid:%s> %r add %r %r" % (getpid(), self.urls, a, b)
+        print "<pid:%s> %r add %r %r" % (getpid(), self.bound, a, b)
         return a+b
 
     def subtract(self, a, b):
-        print "<pid:%s> %r subtract %r %r" % (getpid(), self.urls, a, b)
+        print "<pid:%s> %r subtract %r %r" % (getpid(), self.bound, a, b)
         return a-b
 
     def multiply(self, a, b):
-        print "<pid:%s> %r multiply %r %r" % (getpid(), self.urls, a, b)
+        print "<pid:%s> %r multiply %r %r" % (getpid(), self.bound, a, b)
         return a*b
 
     def divide(self, a, b):
-        print "<pid:%s> %r divide %r %r" % (getpid(), self.urls, a, b)
+        print "<pid:%s> %r divide %r %r" % (getpid(), self.bound, a, b)
         return a/b
 
 class Worker(Process):

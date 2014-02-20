@@ -104,7 +104,7 @@ class GeventRPCService(RPCServiceBase):
             Spawns a receive-reply greenlet that serves this socket.
             Returns spawned greenlet instance.
         """
-        assert self.urls, 'not bound?'
+        assert self.bound or self.connected, 'not bound/connected?'
         assert self.greenlet is None, 'already started'
 
         def receive_reply():
