@@ -109,6 +109,7 @@ class GeventRPCClient(RPCClientBase):
                 reply = self._parse_reply(msg_list)
 
                 if reply is None:
+                    #logger.debug('skipping invalid reply')
                     continue
 
                 req_id   = reply['req_id']
@@ -116,16 +117,20 @@ class GeventRPCClient(RPCClientBase):
                 result   = reply['result']
 
                 if msg_type == b'ACK':
+                    #logger.debug('skipping ACK, req_id=%r' % req_id)
                     continue
 
                 async = results.pop(req_id, None)
                 if async is None:
                     # result is gone, must be a timeout
+                    #logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
                     continue
 
                 if msg_type == b'OK':
+                    #logger.debug('async.set(result), req_id=%r' % req_id)
                     async.set(result)
                 else:
+                    #logger.debug('async.set_exception(result), req_id=%r' % req_id)
                     async.set_exception(result)
 
         logger.warning('_reader exited')
@@ -183,5 +188,7 @@ class GeventRPCClient(RPCClientBase):
 
         result = AsyncResult()
         self._results[req_id] = result
+        #logger.debug('waiting for result=%r' % result)
         return result.get()  # block waiting for a reply passed by ._reader
     #}
+

@@ -61,11 +61,14 @@ from logging import getLogger, DEBUG
 logger = getLogger('netcall')
 
 
-def setup_logger(logger=logger, level=DEBUG, stream=stderr):  #{
+def setup_logger(logger='netcall', level=DEBUG, stream=stderr):  #{
     """ A utility function to setup a basic logging handler
         for a given logger (netcall by default)
     """
     from logging import StreamHandler, Formatter
+
+    if isinstance(logger, basestring):
+        logger = getLogger(logger)
 
     handler   = StreamHandler(stream)
     formatter = Formatter("%(levelname)s:%(name)s:%(message)s")
