@@ -63,8 +63,8 @@ class GeventRPCClient(RPCClientBase):
     def _create_socket(self):  #{
         super(GeventRPCClient, self)._create_socket()
     #}
-    def bind(self, url):  #{
-        result = super(GeventRPCClient, self).bind(url)
+    def bind(self, *args, **kwargs):  #{
+        result = super(GeventRPCClient, self).bind(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
     #}
@@ -73,8 +73,8 @@ class GeventRPCClient(RPCClientBase):
         self._ready_ev.set()  # wake up _reader
         return result
     #}
-    def connect(self, url):  #{
-        result = super(GeventRPCClient, self).connect(url)
+    def connect(self, *args, **kwargs):  #{
+        result = super(GeventRPCClient, self).connect(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
     #}
