@@ -1,5 +1,7 @@
+# vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
+
 """
-Gevent versions of RPC service and client
+Tornado versions of RPC service and client
 
 Authors:
 
@@ -11,24 +13,23 @@ Example
 
 To create a simple service::
 
-    from netcall.green import GeventRPCService
+    from netcall.tornado import TornadoRPCService
 
-    echo = GeventRPCService()
+    echo = TornadoRPCService()
 
     @echo.task
     def echo(self, s):
         return s
 
-    echo = Echo()
     echo.bind('tcp://127.0.0.1:5555')
     echo.start()
     echo.serve()
 
 To talk to this service::
 
-    from netcall.green import GeventRPCClient
+    from netcall import SyncRPCClient
 
-    p = GeventRPCClient()
+    p = SyncRPCClient()
     p.connect('tcp://127.0.0.1:5555')
     p.echo('Hi there')
     'Hi there'
@@ -52,6 +53,5 @@ from ..client  import (
 )
 from ..serializer import *
 
-from .service import GeventRPCService
-from .client  import GeventRPCClient
-
+from .service import TornadoRPCService
+from .client  import TornadoRPCClient

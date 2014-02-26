@@ -13,7 +13,7 @@ Example
 
 To create a simple service::
 
-    from netcall import TornadoRPCService
+    from netcall.tornado import TornadoRPCService
 
     echo = TornadoRPCService()
 
@@ -46,11 +46,13 @@ To talk to this service::
 # Imports
 #-----------------------------------------------------------------------------
 
-# Notice: for gevent versions of the classes import zpyrc.green
+# Notice:
+# for tornado versions of the classes import netcall.tornado
+# for gevent versions of the classes import netcall.green
 
-from .service import TornadoRPCService
+from .service import RPCServiceBase
 from .client  import (
-    SyncRPCClient, TornadoRPCClient, AsyncRemoteMethod, RemoteMethod,
+    SyncRPCClient, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError
 )
 from .serializer import *

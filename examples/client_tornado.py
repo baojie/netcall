@@ -20,7 +20,7 @@ from zmq.eventloop import ioloop
 ioloop.install()
 
 from tornado import gen
-from netcall import TornadoRPCClient, JSONSerializer, RemoteRPCError
+from netcall.tornado import TornadoRPCClient, JSONSerializer, RemoteRPCError
 
 
 def spawn(coro, *args, **kwargs):
