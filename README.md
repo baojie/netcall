@@ -26,7 +26,7 @@ added new features and examples.
 To create a service:
 
 ```python
-from netcall import TornadoRPCService
+from netcall.tornado import TornadoRPCService
 
 echo = TornadoRPCService()
 
