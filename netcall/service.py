@@ -42,7 +42,8 @@ logger = getLogger("netcall")
 
 class RPCServiceBase(RPCBase):  #{
 
-    _RESERVED = ['registser','proc','task','start','stop','serve']
+    _RESERVED = ['register','register_object','proc','task','start','stop','serve',
+                 'reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
 
     def __init__(self, *args, **kwargs):  #{
         """
@@ -63,13 +64,7 @@ class RPCServiceBase(RPCBase):  #{
         self.procedures = {}  # {<name> : <callable>}
 
         # register extra class methods as service procedures
-        for name in dir(self):
-            if name.startswith('_') or name in self._RESERVED:
-                continue
-            try:    proc = getattr(self, name)
-            except: continue
-            if callable(proc):
-                self.procedures[name] = proc
+        self.register_object(self, restricted=self._RESERVED)
     #}
     def _send_ack(self, request):  #{
         "Send an ACK notification"
@@ -225,6 +220,50 @@ class RPCServiceBase(RPCBase):  #{
 
     task = register  # alias
     proc = register  # alias
+    
+    def register_object(self, obj, restricted=[], namespace=''):  #{
+        """
+        Register public functions of a given object as service tasks.
+        Give the possibility to not register some restricted functions.
+        Give the possibility to prefix the service name with a namespace.
+        
+        Example 1:
+        
+        class MyObj(object):
+            def __init__(self, value):
+                self._value = value
+            def value(self):
+                return self._value
+
+        first = MyObj(1)
+        service.register_object(first)
+
+        second = MyObj(2)
+        service.register_object(second, namespace='second')
+
+        third = MyObj(3)
+        # Actually register nothing
+        service.register_object(third, namespace='third', restricted=['value'])
+        
+        # Register a full module
+        import random
+        service.register_object(random, namespace='random')
+        
+        ...
+        
+        client.value() # Returns 1
+        client.second.value() # Returns 2
+        client.third.value() # Exception NotImplementedError
+        client.random.randint(10, 30) # Returns an int
+        """
+        for name in dir(obj):
+            if name.startswith('_') or (name in restricted):
+                continue
+            try:    proc = getattr(obj, name)
+            except: continue
+            if callable(proc):
+                self.procedures['.'.join([namespace, name]).lstrip('.')] = proc
+    #}
 
     @abstractmethod
     def start(self):  #{
