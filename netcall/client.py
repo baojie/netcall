@@ -234,8 +234,13 @@ class RemoteMethodBase(object):  #{
 #}
 class RemoteMethod(RemoteMethodBase):  #{
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs):  #{
         return self.client.call(self.method, args, kwargs)
+    #}
+
+    def __getattr__(self, name):  #{
+        return RemoteMethod(self.client, '.'.join([self.method, name]))
+    #}
 #}
 
 class RPCError(Exception):  #{
