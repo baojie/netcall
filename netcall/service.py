@@ -42,7 +42,8 @@ logger = getLogger("netcall")
 
 class RPCServiceBase(RPCBase):  #{
 
-    _RESERVED = ['registser','proc','task','start','stop','serve']
+    _RESERVED = ['register','proc','task','start','stop','serve',
+                 'reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
 
     def __init__(self, *args, **kwargs):  #{
         """
