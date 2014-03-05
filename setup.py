@@ -7,7 +7,7 @@ setup(
     version = "0.2.7",
     packages = find_packages(),
 
-    install_requires = ['pyzmq','tornado'],
+    install_requires = ['pyzmq'],
 
     author = "Alexander Glyzov",
     author_email = "bonoba@gmail.com",
