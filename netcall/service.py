@@ -28,13 +28,7 @@ from functools import partial
 from logging   import getLogger
 from abc       import abstractmethod
 
-import zmq
-
-from zmq.eventloop.zmqstream import ZMQStream
-from zmq.eventloop.ioloop    import IOLoop
 from zmq.utils               import jsonapi
-
-from tornado.concurrent import Future
 
 from .base import RPCBase
 
@@ -48,7 +42,8 @@ logger = getLogger("netcall")
 
 class RPCServiceBase(RPCBase):  #{
 
-    _RESERVED = ['registser','proc','task','start','stop','serve']
+    _RESERVED = ['register','register_object','proc','task','start','stop','serve',
+                 'reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
 
     def __init__(self, *args, **kwargs):  #{
         """
@@ -69,13 +64,7 @@ class RPCServiceBase(RPCBase):  #{
         self.procedures = {}  # {<name> : <callable>}
 
         # register extra class methods as service procedures
-        for name in dir(self):
-            if name.startswith('_') or name in self._RESERVED:
-                continue
-            try:    proc = getattr(self, name)
-            except: continue
-            if callable(proc):
-                self.procedures[name] = proc
+        self.register_object(self, restricted=self._RESERVED)
     #}
     def _send_ack(self, request):  #{
         "Send an ACK notification"
@@ -231,6 +220,50 @@ class RPCServiceBase(RPCBase):  #{
 
     task = register  # alias
     proc = register  # alias
+    
+    def register_object(self, obj, restricted=[], namespace=''):  #{
+        """
+        Register public functions of a given object as service tasks.
+        Give the possibility to not register some restricted functions.
+        Give the possibility to prefix the service name with a namespace.
+        
+        Example 1:
+        
+        class MyObj(object):
+            def __init__(self, value):
+                self._value = value
+            def value(self):
+                return self._value
+
+        first = MyObj(1)
+        service.register_object(first)
+
+        second = MyObj(2)
+        service.register_object(second, namespace='second')
+
+        third = MyObj(3)
+        # Actually register nothing
+        service.register_object(third, namespace='third', restricted=['value'])
+        
+        # Register a full module
+        import random
+        service.register_object(random, namespace='random')
+        
+        ...
+        
+        client.value() # Returns 1
+        client.second.value() # Returns 2
+        client.third.value() # Exception NotImplementedError
+        client.random.randint(10, 30) # Returns an int
+        """
+        for name in dir(obj):
+            if name.startswith('_') or (name in restricted):
+                continue
+            try:    proc = getattr(obj, name)
+            except: continue
+            if callable(proc):
+                self.procedures['.'.join([namespace, name]).lstrip('.')] = proc
+    #}
 
     @abstractmethod
     def start(self):  #{
@@ -248,102 +281,5 @@ class RPCServiceBase(RPCBase):  #{
     def serve(self):  #{
         """ Serve RPC requests (blocking) """
         pass
-    #}
-#}
-
-class TornadoRPCService(RPCServiceBase):  #{
-    """ An asynchronous RPC service that takes requests over a ROUTER socket.
-        Using Tornado compatible IOLoop and ZMQStream from PyZMQ.
-    """
-
-    def __init__(self, context=None, ioloop=None, **kwargs):  #{
-        """
-        Parameters
-        ==========
-        ioloop : IOLoop
-            An existing IOLoop instance, if not passed, zmq.IOLoop.instance()
-            will be used.
-        context : Context
-            An existing Context instance, if not passed, zmq.Context.instance()
-            will be used.
-        serializer : Serializer
-            An instance of a Serializer subclass that will be used to serialize
-            and deserialize args, kwargs and the result.
-        """
-        assert context is None or isinstance(context, zmq.Context)
-        self.context = context if context is not None else zmq.Context.instance()
-        self.ioloop  = IOLoop.instance() if ioloop is None else ioloop
-        self._is_started = False
-        super(TornadoRPCService, self).__init__(**kwargs)
-    #}
-    def _create_socket(self):  #{
-        super(TornadoRPCService, self)._create_socket()
-        socket = self.context.socket(zmq.ROUTER)
-        self.socket = ZMQStream(socket, self.ioloop)
-    #}
-    def _handle_request(self, msg_list):  #{
-        """
-        Handle an incoming request.
-
-        The request is received as a multipart message:
-
-        [<id>..<id>, b'|', req_id, proc_name, <ser_args>, <ser_kwargs>, <ignore>]
-
-        First, the service sends back a notification that the message was
-        indeed received:
-
-        [<id>..<id>, b'|', req_id, b'ACK',  service_id]
-
-        Next, the actual reply depends on if the call was successful or not:
-
-        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
-
-        Here the (ename, evalue, traceback) are utf-8 encoded unicode.
-        """
-        req = self._parse_request(msg_list)
-        if req is None:
-            return
-        self._send_ack(req)
-
-        ignore = req['ignore']
-
-        try:
-            # raise any parsing errors here
-            if req['error']:
-                raise req['error']
-            # call procedure
-            res = req['proc'](*req['args'], **req['kwargs'])
-        except Exception:
-            not ignore and self._send_fail(req)
-        else:
-            def send_future_result(fut):
-                try:    res = fut.result()
-                except: not ignore and self._send_fail(req)
-                else:   not ignore and self._send_ok(req, res)
-
-            if isinstance(res, Future):
-                self.ioloop.add_future(res, send_future_result)
-            else:
-                not ignore and self._send_ok(req, res)
-    #}
-    def start(self):  #{
-        """ Start the RPC service (non-blocking) """
-        assert self._is_started == False, "already started"
-        # register IOLoop callback
-        self._is_started = True
-        self.socket.on_recv(self._handle_request)
-    #}
-    def stop(self):  #{
-        """ Stop the RPC service (non-blocking) """
-        # register IOLoop callback
-        self.socket.stop_on_recv()
-        self._is_started = False
-    #}
-    def serve(self):  #{
-        """ Serve RPC requests (blocking) """
-        if not self._is_started:
-            self.start()
-        return self.ioloop.start()
     #}
 #}

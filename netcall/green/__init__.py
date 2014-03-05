@@ -45,10 +45,9 @@ To talk to this service::
 # Imports
 #-----------------------------------------------------------------------------
 
-from ..service import TornadoRPCService
+from ..service import RPCServiceBase
 from ..client  import (
-    SyncRPCClient, TornadoRPCClient,
-    AsyncRemoteMethod, RemoteMethod,
+    SyncRPCClient, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError
 )
 from ..serializer import *

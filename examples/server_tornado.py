@@ -14,7 +14,7 @@ from zmq.eventloop import ioloop
 ioloop.install()
 
 from tornado import gen
-from netcall import TornadoRPCService, JSONSerializer
+from netcall.tornado import TornadoRPCService, JSONSerializer
 
 
 # Custom serializer/deserializer can be set up upon initialization.

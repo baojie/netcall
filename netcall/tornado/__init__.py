@@ -1,7 +1,7 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
 """
-NetCall - A simple Python RPC system using ZeroMQ as a transport
+Tornado versions of RPC service and client
 
 Authors:
 
@@ -46,36 +46,12 @@ To talk to this service::
 # Imports
 #-----------------------------------------------------------------------------
 
-# Notice:
-# for tornado versions of the classes import netcall.tornado
-# for gevent versions of the classes import netcall.green
-
-from .service import RPCServiceBase
-from .client  import (
+from ..service import RPCServiceBase
+from ..client  import (
     SyncRPCClient, RemoteMethod,
     RPCError, RemoteRPCError, RPCTimeoutError
 )
-from .serializer import *
+from ..serializer import *
 
-from sys     import stderr
-from logging import getLogger, DEBUG
-
-logger = getLogger('netcall')
-
-
-def setup_logger(logger='netcall', level=DEBUG, stream=stderr):  #{
-    """ A utility function to setup a basic logging handler
-        for a given logger (netcall by default)
-    """
-    from logging import StreamHandler, Formatter
-
-    if isinstance(logger, basestring):
-        logger = getLogger(logger)
-
-    handler   = StreamHandler(stream)
-    formatter = Formatter("%(levelname)s:%(name)s:%(message)s")
-    handler.setLevel(level)
-    handler.setFormatter(formatter)
-    logger.setLevel(level)
-    logger.addHandler(handler)
-#}
+from .service import TornadoRPCService
+from .client  import TornadoRPCClient
