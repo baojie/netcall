@@ -1,16 +1,9 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-from gevent import monkey
-monkey.patch_all()
-
 from os       import removedirs
 from tempfile import mkdtemp
-from unittest import TestCase
 
-from netcall.green import GeventRPCClient
-
-
-class GeventClientTest(TestCase):
+class BaseClientTest(object):
 
     @classmethod
     def setUpClass(cls):
@@ -26,7 +19,8 @@ class GeventClientTest(TestCase):
         removedirs(cls.tmp_dir)
 
     def setUp(self):
-        self.client = GeventRPCClient()
+        # Setup of self.client by child classes
+        assert self.client
 
     def tearDown(self):
         self.client.socket.close(0)
