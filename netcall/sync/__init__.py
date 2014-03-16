@@ -86,26 +86,39 @@ class SyncRPCClient(RPCClientBase):  #{
         else:
             recv_multipart = self.socket.recv_multipart
 
-        while True:
-            msg_list = recv_multipart()
-            self.logger.debug('received: %r' % msg_list)
+        def recv_yielder():  #{
+            logger = self.logger
+            while True:
+                msg_list = recv_multipart()
+                logger.debug('received %r' % msg_list)
+                reply = self._parse_reply(msg_list)
 
-            reply = self._parse_reply(msg_list)
+                if reply is None \
+                or reply['req_id'] != req_id:
+                      continue
 
-            if reply is None \
-            or reply['req_id'] != req_id:
-                continue
+                if reply['type'] == b'ACK':
+                    if ignore:
+                        yield b'OK', None
+                        return
+                    else:
+                        continue
 
-            if reply['type'] == b'ACK':
-                if ignore:
-                    return None
-                else:
-                    continue
+                if reply['type'] == b'FAIL':
+                    raise reply['result']
 
-            if reply['type'] == b'OK':
-                return reply['result']
-            else:
-                raise reply['result']
+                yield reply['type'], reply['result']
+                if reply['type'] == b'OK':
+                    return
+        #}
+
+        recv_gen = recv_yielder()
+        reply_type, result = next(recv_gen)
+
+        if reply_type == b'OK':
+            return result
+        else:
+            return self._yielder(recv_gen, req_id)
     #}
 #}
 

@@ -1,5 +1,7 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
+from types import GeneratorType
+
 from netcall import RemoteRPCError
 
 
@@ -25,13 +27,14 @@ class RPCCallsMixIn(object):  #{
     reserved_fields = [
         'register', 'register_object', 'proc', 'task',
         'start', 'stop', 'serve', 'shutdown', 'reset',
-        'connect', 'bind', 'bind_ports'
+        'connect', 'bind', 'bind_ports',
+        'YIELD_SEND', 'YIELD_THROW', 'YIELD_CLOSE' # Keep these three at the end
     ]
-
+        
     def test_netcall_reserved(self):
         self.service.start()
-
-        for f in self.reserved_fields:
+        
+        for f in self.reserved_fields[:-3]: # Avoid asking for the YIELD functions, they raise another exception
             self.assertNotImplementedRemotely(f)
 
     def test_cannot_register_netcall_reserved(self):
@@ -44,7 +47,7 @@ class RPCCallsMixIn(object):  #{
         self.service.start()
 
         self.assertDictEqual(self.service.procedures, {})
-        for f in self.reserved_fields:
+        for f in self.reserved_fields[:-3]: # Avoid asking for the YIELD functions, they raise another exception
             self.assertNotImplementedRemotely(f)
 
     def test_cannot_register_object_netcall_reserved(self):
@@ -60,7 +63,7 @@ class RPCCallsMixIn(object):  #{
         self.service.start()
 
         self.assertDictEqual(self.service.procedures, {})
-        for f in self.reserved_fields:
+        for f in self.reserved_fields[:-3]: # Avoid asking for the YIELD functions, they raise another exception
             self.assertNotImplementedRemotely(f)
 
     def test_function(self):
@@ -196,8 +199,103 @@ class RPCCallsMixIn(object):  #{
 
         self.assertIsInstance(self.client.randint(0, 10), int)
         self.assertIsInstance(self.client.random(), float)
-#}
+        
+    def test_generator(self):
+        fixture = range(10)
+        @self.service.register
+        def yielder():
+            for i in fixture:
+                yield i
+                
+        self.service.start()
+        
+        gen = self.client.yielder()
+        self.assertIsInstance(gen, GeneratorType)
+        self.assertEqual(list(gen), fixture)
+        self.assertDictEqual(self.service.yield_send_queues, {})
+      
+    def test_generator_none(self):
+        @self.service.register
+        def yielder():
+            for i in range(10):
+                yield
+                
+        self.service.start()
+        
+        self.assertEqual(list(self.client.yielder()), [None] * 10)
+        self.assertDictEqual(self.service.yield_send_queues, {})
+        
+    def test_generator_next(self):
+        @self.service.register
+        def echo(value=None):
+            while True:
+                yield value
+                
+        self.service.start()
+        
+        gen = self.client.echo(1)
+        self.assertEqual(gen.next(), 1)
+        self.assertEqual(next(gen), 1)
+        gen = None
+        self.assertDictEqual(self.service.yield_send_queues, {})
+        
+    def test_generator_send(self):
+        fixture = range(10)
+        closed = False
+        @self.service.register
+        def echo(value=None):
+            while True:
+                value = (yield value)
+                
+        self.service.start()
+        
+        gen = self.client.echo(1)
+        self.assertEqual(gen.send(None), 1)
+        self.assertEqual(gen.send(2), 2)
+        gen = None
+        self.assertDictEqual(self.service.yield_send_queues, {})
 
+    def test_generator_throw(self):
+        @self.service.register
+        def echo(value=None):
+            while True:
+                try:
+                    value = (yield value)
+                    print 'Received value', value
+                except Exception, e:
+                    value = e
+                
+        self.service.start()
+        
+        gen = self.client.echo(1)
+        next(gen)
+        e = gen.throw(TypeError, 'spam')
+        self.assertIsInstance(e, Exception)
+        with self.assertRaisesRegexp(TypeError, 'spam'):
+            raise e
+        gen = None
+        self.assertDictEqual(self.service.yield_send_queues, {})
+        
+    def test_generator_close(self):
+        closed = [False]
+        @self.service.register
+        def echo(value=None):
+            try:
+                while True:
+                    yield
+            finally:
+                closed[0] = True
+                
+        self.service.start()
+        
+        gen = self.client.echo(1)
+        next(gen)
+        gen.close()
+        self.assertTrue(closed)
+        with self.assertRaises(StopIteration):
+            next(gen)
+        self.assertDictEqual(self.service.yield_send_queues, {})
+    
 class ToyObject(object):  #{
 
     def __init__(self, value):

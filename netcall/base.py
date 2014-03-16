@@ -6,6 +6,7 @@ Authors:
 
 * Brian Granger
 * Alexander Glyzov
+* Axel Voitier
 
 """
 #-----------------------------------------------------------------------------
@@ -184,8 +185,12 @@ class RPCBase(object):  #{
 
 class RPCServiceBase(RPCBase):  #{
 
-    _RESERVED = ['register','register_object','proc','task','start','stop','serve',
-                 'shutdown','reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
+    _RESERVED = [
+        'register', 'register_object', 'proc', 'task',
+        'start', 'stop', 'serve', 'shutdown', 'reset',
+        'connect', 'bind', 'bind_ports',
+        'YIELD_SEND', 'YIELD_THROW', 'YIELD_CLOSE'
+    ]
 
     logger = getLogger("netcall.service")
 
@@ -239,7 +244,12 @@ class RPCServiceBase(RPCBase):  #{
         ignore   = None
         boundary = msg_list.index(b'|')
         name     = msg_list[boundary+2]
-        proc     = self.procedures.get(name, None)
+
+        if name in ['YIELD_SEND', 'YIELD_THROW', 'YIELD_CLOSE']:
+            proc = name
+        else:
+            proc = self.procedures.get(name, None)
+
         try:
             data = msg_list[boundary+3:boundary+5]
             args, kwargs = self._serializer.deserialize_args_kwargs(data)
@@ -266,7 +276,7 @@ class RPCServiceBase(RPCBase):  #{
         Parameters
         ----------
         typ : bytes
-            Either b'ACK', b'OK' or b'FAIL'.
+            Either b'ACK', b'OK', b'YIELD' or b'FAIL'.
         data : list of bytes
             A list of data frame to be appended to the message.
         """
@@ -282,6 +292,7 @@ class RPCServiceBase(RPCBase):  #{
 
             Notice: reply is a list produced by self._build_reply()
         """
+        self.logger.debug('sending %r' % reply)
         self.socket.send_multipart(reply)
     #}
     def _send_ack(self, request):  #{
@@ -290,13 +301,19 @@ class RPCServiceBase(RPCBase):  #{
         self._send_reply(reply)
     #}
     def _send_ok(self, request, result):  #{
-        "Send a OK reply"
+        "Send an OK reply"
         data_list = self._serializer.serialize_result(result)
         reply = self._build_reply(request, b'OK', data_list)
         self._send_reply(reply)
     #}
+    def _send_yield(self, request, result):  #{
+        "Send a YIELD reply"
+        data_list = self._serializer.serialize_result(result)
+        reply = self._build_reply(request, b'YIELD', data_list)
+        self._send_reply(reply)
+    #}
     def _send_fail(self, request):  #{
-        """Send a FAIL reply"""
+        "Send a FAIL reply"
         # take the current exception implicitly
         etype, evalue, tb = exc_info()
         error_dict = {
@@ -325,10 +342,30 @@ class RPCServiceBase(RPCBase):  #{
 
         Next, the actual reply depends on if the call was successful or not:
 
-        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', req_id, b'OK',    <serialized result>]
+        [<id>..<id>, b'|', req_id, b'YIELD', <serialized result>]*
+        [<id>..<id>, b'|', req_id, b'FAIL',  <JSON dict of ename, evalue, traceback>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
+
+        In case of a YIELD reply, the client can send a YIELD_SEND, YIELD_THROW or
+        YIELD_CLOSE messages with the same req_id as in the first message sent.
+        The first YIELD reply will contain no result to signal the client it is a
+        yield-generator. The first message sent by the client to a yield-generator
+        must be a YIELD_SEND with None as argument.
+
+        [<id>..<id>, b'|', req_id, 'YIELD_SEND',  <serialized sent value>]
+        [<id>..<id>, b'|', req_id, 'YIELD_THROW', <serialized ename, evalue>]
+        [<id>..<id>, b'|', req_id, 'YIELD_CLOSE', <no args & kwargs>]
+
+        The service will first send an ACK message. Then, it will send a YIELD
+        reply whenever ready, or a FAIL reply in case an exception is raised.
+
+        Termination of the yield-generator happens by throwing an exception.
+        Normal termination raises a StopIterator. Termination by YIELD_CLOSE can
+        raises a GeneratorExit or a StopIteration depending on the implementation
+        of the yield-generator. Any other exception raised will also terminate
+        the yield-generator.
 
         Note: subclasses have to override this method
         """
@@ -456,8 +493,8 @@ class RPCClientBase(RPCBase):  #{
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.setsockopt(zmq.IDENTITY, self.identity)
     #}
-    def _build_request(self, method, args, kwargs, ignore=False):  #{
-        req_id = b'%x' % randint(0, 0xFFFFFFFF)
+    def _build_request(self, method, args, kwargs, ignore=False, req_id=None):  #{
+        req_id = req_id or b'%x' % randint(0, 0xFFFFFFFF)
         method = bytes(method)
         msg_list = [b'|', req_id, method]
         data_list = self._serializer.serialize_args_kwargs(args, kwargs)
@@ -475,7 +512,7 @@ class RPCClientBase(RPCBase):  #{
         [b'|', req_id, type, payload ...]
 
         Returns either None or a dict {
-            'type'   : <message_type:bytes>       # ACK | OK | FAIL
+            'type'   : <message_type:bytes>       # ACK | OK | YIELD | FAIL
             'req_id' : <id:bytes>,                # unique message id
             'srv_id' : <service_id:bytes> | None  # only for ACK messages
             'result' : <object>
@@ -492,7 +529,7 @@ class RPCClientBase(RPCBase):  #{
 
         if msg_type == b'ACK':
             srv_id = data[0]
-        elif msg_type == b'OK':
+        elif msg_type in (b'OK', b'YIELD'):
             try:
                 result = self._serializer.deserialize_result(data)
             except Exception, e:
@@ -501,7 +538,12 @@ class RPCClientBase(RPCBase):  #{
         elif msg_type == b'FAIL':
             try:
                 error  = jsonapi.loads(msg_list[3])
-                result = RemoteRPCError(error['ename'], error['evalue'], error['traceback'])
+                if error['ename'] == 'StopIteration':
+                    result = StopIteration()
+                elif error['ename'] == 'GeneratorExit':
+                    result = GeneratorExit()
+                else:
+                    result = RemoteRPCError(error['ename'], error['evalue'], error['traceback'])
             except Exception, e:
                 self.logger.error('unexpected error while decoding FAIL', exc_info=True)
                 result = RPCError('unexpected error while decoding FAIL: %s' % e)
@@ -516,12 +558,52 @@ class RPCClientBase(RPCBase):  #{
         )
     #}
 
+    def _yielder(self, recv_generator, req_id):  #{
+        """Implements the yield-generator workflow.
+        This function is made to be reused by subclasses.
+        recv_generator should be a generator yielding tuples of (_, data).
+        That is, the first element of the tuple is ignored.
+        recv_generator should NOT yield the data from the very first YIELD reply.
+        """
+        logger = self.logger
+
+        def _send(method, args):
+            _, msg_list = self._build_request(method, args, None, False, req_id=req_id)
+            logger.debug('send: %r' % msg_list)
+            self.socket.send_multipart(msg_list)
+
+        try:
+            _send('YIELD_SEND', None)
+            while True:
+                _, obj = next(recv_generator)
+                try:
+                    to_send = yield obj
+                except Exception, e:
+                    logger.debug('generator.throw()')
+                    etype, evalue, _ = exc_info()
+                    _send('YIELD_THROW', [str(etype.__name__), str(evalue)])
+                else:
+                    _send('YIELD_SEND', to_send)
+        except StopIteration:
+            return
+        except GeneratorExit, e:
+            logger.debug('generator.close()')
+            _send('YIELD_CLOSE', None)
+            next(recv_generator)
+            raise e
+        except Exception, e:
+            logger.warning(e)
+            raise e
+        finally:
+            logger.debug('_yielder exits (req_id=%s)', req_id)
+    #}
+
     def __getattr__(self, name):  #{
         return RemoteMethod(self, name)
     #}
 
     @abstractmethod
-    def call(self, proc_name, args=[], kwargs={}, ignore=False):  #{
+    def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
         """
         Call the remote method with *args and **kwargs
         (may raise exception)

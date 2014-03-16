@@ -7,6 +7,7 @@ Authors:
 
 * Brian Granger
 * Alexander Glyzov
+* Axel Voitier
 
 """
 #-----------------------------------------------------------------------------
@@ -21,8 +22,10 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from gevent       import spawn, spawn_later
-from gevent.event import Event, AsyncResult
+from gevent         import spawn, spawn_later
+from gevent.event   import Event, AsyncResult
+from gevent.queue   import Queue
+from gevent.timeout import Timeout
 
 from ..base   import RPCClientBase
 from ..utils  import get_zmq_classes
@@ -30,10 +33,10 @@ from ..errors import RPCTimeoutError
 
 
 #-----------------------------------------------------------------------------
-# RPC Service Proxy
+# Gevent RPC client
 #-----------------------------------------------------------------------------
 
-class GeventRPCClient(RPCClientBase):
+class GeventRPCClient(RPCClientBase):  #{
     """ An asynchronous service proxy whose requests will not block.
         Uses the Gevent compatibility layer of pyzmq (zmq.green).
     """
@@ -62,7 +65,7 @@ class GeventRPCClient(RPCClientBase):
         self._ready_ev = Event()
         self._exit_ev  = Event()
         self.greenlet  = spawn(self._reader)
-        self._results  = {}    # {<msg-id> : <gevent.AsyncResult>}
+        self._results  = {}  # {<msg-id> : <_ReturnOrYieldResult>}
     #}
     def _create_socket(self):  #{
         super(GeventRPCClient, self)._create_socket()
@@ -89,6 +92,7 @@ class GeventRPCClient(RPCClientBase):
             fills matching async results thus passing control to waiting greenlets (see .call)
         """
         ready_ev = self._ready_ev
+        exit_ev  = self._exit_ev
         socket   = self.socket
         results  = self._results
         running  = True
@@ -122,11 +126,21 @@ class GeventRPCClient(RPCClientBase):
                     logger.debug('skipping ACK, req_id=%r' % req_id)
                     continue
 
-                async = results.pop(req_id, None)
+                if msg_type == b'YIELD':
+                    results_get_fn = results.get
+                    async_init_fn = _ReturnOrYieldResult.init_as_yield
+                else: # For OK and FAIL
+                    results_get_fn = results.pop
+                    async_init_fn = _ReturnOrYieldResult.init_as_return
+
+                async = results_get_fn(req_id, None)
                 if async is None:
                     # result is gone, must be a timeout
                     logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
                     continue
+                if not async.is_init():
+                    async_init_fn(async)
+
 
                 if msg_type in [b'OK', b'YIELD']:
                     logger.debug('async.set(result), req_id=%r' % req_id)
@@ -135,7 +149,7 @@ class GeventRPCClient(RPCClientBase):
                     logger.debug('async.set_exception(result), req_id=%r' % req_id)
                     async.set_exception(result)
 
-            if self._exit_ev.is_set():
+            if exit_ev.is_set():
                 logger.debug('_reader received an EXIT signal')
                 break
 
@@ -199,9 +213,69 @@ class GeventRPCClient(RPCClientBase):
                     result.set_exception(RPCTimeoutError(tout_msg))
             spawn_later(timeout, _abort_request)
 
-        result = AsyncResult()
+        result = _ReturnOrYieldResult(self, req_id)
         self._results[req_id] = result
         logger.debug('waiting for result=%r' % result)
         return result.get()  # block waiting for a reply passed by ._reader
     #}
+#}
 
+class _ReturnOrYieldResult(object):  #{
+
+    def __init__(self, client, req_id):
+        self.is_initialized = Event()
+        self.return_or_except = AsyncResult()
+        self.yield_queue = Queue(1)
+        self.client = client
+        self.req_id = req_id
+
+    def init_as_return(self):
+        assert(not self.is_init())
+        self.is_yield = False
+        self.is_initialized.set()
+
+    def init_as_yield(self):
+        assert(not self.is_init())
+        self.is_yield = True
+        self.is_initialized.set()
+
+    def is_init(self):
+        return self.is_initialized.is_set()
+
+    def set(self, obj):
+        assert(self.is_init())
+        if self.is_yield:
+            self.yield_queue.put(obj)
+        else:
+            self.return_or_except.set(obj)
+
+    def set_exception(self, ex):
+        assert(self.is_init())
+        self.return_or_except.set_exception(ex)
+        if self.is_yield:
+            self.yield_queue.put(None)
+
+    def _try_except(self):
+        try:
+            self.return_or_except.get_nowait()
+        except Timeout:
+            pass
+
+    def get(self):
+        self.is_initialized.wait()
+
+        if not self.is_yield:
+            return self.return_or_except.get()
+
+        else:
+            self._try_except()
+            self.yield_queue.get()
+
+            def recv_yielder():
+                while True:
+                    obj = self.yield_queue.get()
+                    self._try_except()
+                    yield None, obj
+
+            return self.client._yielder(recv_yielder(), self.req_id)
+#}
