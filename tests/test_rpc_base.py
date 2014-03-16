@@ -29,12 +29,45 @@ class BaseRPCTest(object):
     def assertNotImplementedRemotely(self, func_name):
         with self.assertRaisesRegexp(RemoteRPCError, "NotImplementedError: Unregistered procedure '%s'" % func_name):
             self.client.call(func_name)
+            
+            
+    reserved_fields = [
+        'register','register_object','proc','task','start','stop','serve',
+        'reset', 'connect', 'bind', 'bind_ports']
         
-    def test_netcall_restricted(self):
+    def test_netcall_reserved(self):
         self.service.start()
-        restricted_fields = ['register','register_object','proc','task','start','stop','serve',
-                 'reset', 'connect', 'bind', 'bind_ports']
-        for f in restricted_fields:
+        
+        for f in self.reserved_fields:
+            self.assertNotImplementedRemotely(f)
+        
+    def test_cannot_register_netcall_reserved(self):
+        def dummy():
+            pass
+        for f in self.reserved_fields:
+            with self.assertRaisesRegexp(ValueError, '{} is a reserved function name'.format(f)):
+                self.service.register(dummy, name=f)
+                 
+        self.service.start()
+        
+        self.assertDictEqual(self.service.procedures, {})
+        for f in self.reserved_fields:
+            self.assertNotImplementedRemotely(f)
+        
+    def test_cannot_register_object_netcall_reserved(self):
+        def dummy():
+            pass
+        class Dummy(object):
+            pass
+        toy = Dummy()
+        for f in self.reserved_fields:
+            setattr(toy, f, dummy)
+        self.service.register_object(toy)
+                 
+        self.service.start()
+        
+        self.assertDictEqual(self.service.procedures, {})
+        for f in self.reserved_fields:
             self.assertNotImplementedRemotely(f)
         
     def test_function(self):
