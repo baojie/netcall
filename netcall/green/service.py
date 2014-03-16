@@ -24,7 +24,7 @@ import gevent
 import zmq
 
 from ..base  import RPCServiceBase
-from ..utils import logger, get_zmq_classes
+from ..utils import get_zmq_classes
 
 
 #-----------------------------------------------------------------------------
@@ -116,7 +116,7 @@ class GeventRPCService(RPCServiceBase):
                     #logger.warning('socket error', exc_info=True)
                     break
                 gevent.spawn(self._handle_request, request)
-            logger.debug('receive_reply exited')
+            self.logger.debug('receive_reply exited')
 
         self.greenlet = gevent.spawn(receive_reply)
         return self.greenlet
@@ -127,7 +127,7 @@ class GeventRPCService(RPCServiceBase):
             return  # nothing to do
         bound     = self.bound
         connected = self.connected
-        logger.debug('resetting the socket')
+        self.logger.debug('resetting the socket')
         self.reset()
         # wait for the greenlet to exit (closed socket)
         self.greenlet.join()

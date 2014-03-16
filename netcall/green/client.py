@@ -24,7 +24,7 @@ from gevent       import spawn, spawn_later
 from gevent.event import Event, AsyncResult
 
 from ..base   import RPCClientBase
-from ..utils  import logger, get_zmq_classes
+from ..utils  import get_zmq_classes
 from ..errors import RPCTimeoutError
 
 
@@ -91,6 +91,7 @@ class GeventRPCClient(RPCClientBase):
         socket   = self.socket
         results  = self._results
         running  = True
+        logger   = self.logger
 
         while running:
             ready_ev.wait()  # block until socket is bound/connected
@@ -99,9 +100,9 @@ class GeventRPCClient(RPCClientBase):
             while self._ready:
                 try:
                     msg_list = socket.recv_multipart()
-                except Exception, e:
+                except:
                     # the socket must have been closed
-                    logger.warning(e)
+                    #logger.warning("socket error", exc_info=True)
                     break
 
                 logger.debug('received: %r' % msg_list)
@@ -109,7 +110,7 @@ class GeventRPCClient(RPCClientBase):
                 reply = self._parse_reply(msg_list)
 
                 if reply is None:
-                    #logger.debug('skipping invalid reply')
+                    logger.debug('skipping invalid reply')
                     continue
 
                 req_id   = reply['req_id']
@@ -117,20 +118,20 @@ class GeventRPCClient(RPCClientBase):
                 result   = reply['result']
 
                 if msg_type == b'ACK':
-                    #logger.debug('skipping ACK, req_id=%r' % req_id)
+                    logger.debug('skipping ACK, req_id=%r' % req_id)
                     continue
 
                 async = results.pop(req_id, None)
                 if async is None:
                     # result is gone, must be a timeout
-                    #logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
+                    logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
                     continue
 
-                if msg_type == b'OK':
-                    #logger.debug('async.set(result), req_id=%r' % req_id)
+                if msg_type in [b'OK', b'YIELD']:
+                    logger.debug('async.set(result), req_id=%r' % req_id)
                     async.set(result)
                 else:
-                    #logger.debug('async.set_exception(result), req_id=%r' % req_id)
+                    logger.debug('async.set_exception(result), req_id=%r' % req_id)
                     async.set_exception(result)
 
             if self._exit_ev.is_set():
@@ -141,7 +142,7 @@ class GeventRPCClient(RPCClientBase):
     #}
     def shutdown(self):  #{
         """Close the socket and signal the reader greenlet to exit"""
-        logger.debug('closing the socket')
+        self.logger.debug('closing the socket')
         self._ready = False
         self._exit_ev.set()
         self._ready_ev.set()
@@ -178,8 +179,11 @@ class GeventRPCClient(RPCClientBase):
         if not self._ready:
             raise RuntimeError('bind or connect must be called first')
 
+        logger = self.logger
+
         req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
 
+        logger.debug('send: %r' % msg_list)
         self.socket.send_multipart(msg_list)
 
         if ignore:
@@ -196,7 +200,7 @@ class GeventRPCClient(RPCClientBase):
 
         result = AsyncResult()
         self._results[req_id] = result
-        #logger.debug('waiting for result=%r' % result)
+        logger.debug('waiting for result=%r' % result)
         return result.get()  # block waiting for a reply passed by ._reader
     #}
 

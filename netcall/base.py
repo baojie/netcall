@@ -22,16 +22,17 @@ Authors:
 from sys       import exc_info
 from abc       import ABCMeta, abstractmethod
 from random    import randint
+from logging   import getLogger
 from traceback import format_exc
 from itertools import chain
 from functools import partial
 
 import zmq
-from zmq.utils               import jsonapi
+from zmq.utils import jsonapi
 
 from .serializer import PickleSerializer
 from .errors     import RemoteRPCError, RPCError
-from .utils      import logger, RemoteMethod
+from .utils      import RemoteMethod
 
 
 #-----------------------------------------------------------------------------
@@ -40,6 +41,8 @@ from .utils      import logger, RemoteMethod
 
 class RPCBase(object):  #{
     __metaclass__ = ABCMeta
+
+    logger = getLogger("netcall")
 
     def __init__(self, serializer=None, identity=None):  #{
         """Base class for RPC service and proxy.
@@ -82,7 +85,7 @@ class RPCBase(object):  #{
     def shutdown(self):  #{
         """ Deallocate resources (cleanup)
         """
-        logger.debug('closing the socket')
+        self.logger.debug('closing the socket')
         self.socket.close(0)
     #}
 
@@ -183,6 +186,8 @@ class RPCServiceBase(RPCBase):  #{
     _RESERVED = ['register','register_object','proc','task','start','stop','serve',
                  'shutdown','reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
 
+    logger = getLogger("netcall.service")
+
     def __init__(self, *args, **kwargs):  #{
         """
         Parameters
@@ -224,7 +229,7 @@ class RPCServiceBase(RPCBase):  #{
         }
         """
         if len(msg_list) < 6 or b'|' not in msg_list:
-            logger.error('bad request: %r' % msg_list)
+            self.logger.error('bad request: %r' % msg_list)
             return None
 
         error    = None
@@ -442,6 +447,8 @@ class RPCServiceBase(RPCBase):  #{
 class RPCClientBase(RPCBase):  #{
     """A service proxy to for talking to an RPCService."""
 
+    logger = getLogger("netcall.client")
+
     def _create_socket(self):  #{
         super(RPCClientBase, self)._create_socket()
 
@@ -474,7 +481,7 @@ class RPCClientBase(RPCBase):  #{
         }
         """
         if len(msg_list) < 4 or msg_list[0] != b'|':
-            logger.error('bad reply: %r' % msg_list)
+            self.logger.error('bad reply: %r' % msg_list)
             return None
 
         msg_type = msg_list[2]
@@ -495,7 +502,7 @@ class RPCClientBase(RPCBase):  #{
                 error  = jsonapi.loads(msg_list[3])
                 result = RemoteRPCError(error['ename'], error['evalue'], error['traceback'])
             except Exception, e:
-                logger.error('unexpected error while decoding FAIL', exc_info=True)
+                self.logger.error('unexpected error while decoding FAIL', exc_info=True)
                 result = RPCError('unexpected error while decoding FAIL: %s' % e)
         else:
             result = RPCError('bad message type: %r' % msg_type)
