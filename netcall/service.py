@@ -22,6 +22,7 @@ Authors:
 
 import sys
 import traceback
+from types import GeneratorType
 
 from itertools import chain
 from functools import partial
@@ -43,7 +44,8 @@ logger = getLogger("netcall.service")
 class RPCServiceBase(RPCBase):  #{
 
     _RESERVED = ['register','register_object','proc','task','start','stop','serve',
-                 'reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
+                 'reset', 'connect', 'bind', 'bind_ports', # From RPCBase
+                 'YIELD_SEND', 'YIELD_THROW', 'YIELD_CLOSE']
 
     def __init__(self, *args, **kwargs):  #{
         """
@@ -73,9 +75,17 @@ class RPCServiceBase(RPCBase):  #{
         self.socket.send_multipart(reply)
     #}
     def _send_ok(self, request, result):  #{
-        "Send a OK reply"
+        "Send an OK reply"
         data_list = self._serializer.serialize_result(result)
         reply = self._build_reply(request, b'OK', data_list)
+        logger.debug('send: %r' % reply)
+        self.socket.send_multipart(reply)
+    #}
+    def _send_yield(self, request, result):  #{
+        "Send a YIELD reply"
+        data_list = self._serializer.serialize_result(result)
+        reply = self._build_reply(request, b'YIELD', data_list)
+        logger.debug('send: %r' % reply)
         self.socket.send_multipart(reply)
     #}
     def _send_fail(self, request):  #{
@@ -120,8 +130,13 @@ class RPCServiceBase(RPCBase):  #{
         kwargs   = None
         ignore   = None
         boundary = msg_list.index(b'|')
+    
         name     = msg_list[boundary+2]
-        proc     = self.procedures.get(name, None)
+        if name in ['YIELD_SEND', 'YIELD_THROW', 'YIELD_CLOSE']:
+            proc = name
+        else:
+            proc = self.procedures.get(name, None)
+    
         try:
             data = msg_list[boundary+3:boundary+5]
             args, kwargs = self._serializer.deserialize_args_kwargs(data)
@@ -148,7 +163,7 @@ class RPCServiceBase(RPCBase):  #{
         Parameters
         ----------
         typ : bytes
-            Either b'ACK', b'OK' or b'FAIL'.
+            Either b'ACK', b'OK', b'YIELD' or b'FAIL'.
         data : list of bytes
             A list of data frame to be appended to the message.
         """
@@ -175,10 +190,30 @@ class RPCServiceBase(RPCBase):  #{
 
         Next, the actual reply depends on if the call was successful or not:
 
-        [<id>..<id>, b'|', req_id, b'OK',   <serialized result>]
-        [<id>..<id>, b'|', req_id, b'FAIL', <JSON dict of ename, evalue, traceback>]
+        [<id>..<id>, b'|', req_id, b'OK',    <serialized result>]
+        [<id>..<id>, b'|', req_id, b'YIELD', <serialized result>]*
+        [<id>..<id>, b'|', req_id, b'FAIL',  <JSON dict of ename, evalue>]
 
         Here the (ename, evalue, traceback) are utf-8 encoded unicode.
+        
+        In case of a YIELD reply, the client can send a YIELD_SEND, YIELD_THROW or
+        YIELD_CLOSE messages with the same req_id as in the first message sent.
+        The first YIELD reply will contain no result to signal the client it is a
+        yield-generator. The first message sent by the client to a yield-generator
+        must be a YIELD_SEND with None as argument.
+
+        [<id>..<id>, b'|', req_id, 'YIELD_SEND',  <serialized sent value>]
+        [<id>..<id>, b'|', req_id, 'YIELD_THROW', <serialized ename, evalue>]
+        [<id>..<id>, b'|', req_id, 'YIELD_CLOSE', <no args & kwargs>]
+        
+        The service will first send an ACK message. Then, it will send a YIELD
+        reply whenever ready, or a FAIL reply in case an exception is raised.
+        
+        Termination of the yield-generator happens by throwing an exception.
+        Normal termination raises a StopIterator. Termination by YIELD_CLOSE can
+        raises a GeneratorExit or a StopIteration depending on the implementation
+        of the yield-generator. Any other exception raised will also terminate
+        the yield-generator.
 
         Note: subclasses have to override this method
         """

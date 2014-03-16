@@ -20,6 +20,8 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
+import sys
+import traceback
 from abc     import abstractmethod
 from time    import time
 from random  import randint
@@ -48,8 +50,9 @@ class RPCClientBase(RPCBase):  #{
         self.socket = self.context.socket(zmq.DEALER)
         self.socket.setsockopt(zmq.IDENTITY, self.identity)
     #}
-    def _build_request(self, method, args, kwargs, ignore=False):  #{
-        req_id = b'%x' % randint(0, 0xFFFFFFFF)
+    def _build_request(self, method, args, kwargs, ignore=False, req_id=None):  #{
+        if req_id is None:
+            req_id = b'%x' % randint(0, 0xFFFFFFFF)
         method = bytes(method)
         msg_list = [b'|', req_id, method]
         data_list = self._serializer.serialize_args_kwargs(args, kwargs)
@@ -67,7 +70,7 @@ class RPCClientBase(RPCBase):  #{
         [b'|', req_id, type, payload ...]
 
         Returns either None or a dict {
-            'type'   : <message_type:bytes>       # ACK | OK | FAIL
+            'type'   : <message_type:bytes>       # ACK | OK | YIELD | FAIL
             'req_id' : <id:bytes>,                # unique message id
             'srv_id' : <service_id:bytes> | None  # only for ACK messages
             'result' : <object>
@@ -84,7 +87,7 @@ class RPCClientBase(RPCBase):  #{
 
         if msg_type == b'ACK':
             srv_id = data[0]
-        elif msg_type == b'OK':
+        elif msg_type in [b'OK', b'YIELD']:
             try:
                 result = self._serializer.deserialize_result(data)
             except Exception, e:
@@ -93,7 +96,13 @@ class RPCClientBase(RPCBase):  #{
         elif msg_type == b'FAIL':
             try:
                 error  = jsonapi.loads(msg_list[3])
-                result = RemoteRPCError(error['ename'], error['evalue'], error['traceback'])
+                if error['ename'] == 'StopIteration':
+                    result = StopIteration()
+                elif error['ename'] == 'GeneratorExit':
+                    result = GeneratorExit()
+                else:
+                    result = RemoteRPCError(
+                        error['ename'], error['evalue'], error['traceback'])
             except Exception, e:
                 logger.error('unexpected error while decoding FAIL', exc_info=True)
                 result = RPCError('unexpected error while decoding FAIL: %s' % e)
@@ -113,7 +122,7 @@ class RPCClientBase(RPCBase):  #{
     #}
 
     @abstractmethod
-    def call(self, proc_name, args=[], kwargs={}, ignore=False):  #{
+    def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
         """
         Call the remote method with *args and **kwargs
         (may raise exception)
@@ -132,6 +141,45 @@ class RPCClientBase(RPCBase):  #{
             If the call fails, `RemoteRPCError` will be raised.
         """
         pass
+        
+    def _yielder(self, recv_generator, req_id):
+        """Implements the yield-generator workflow.
+        This function is made to be reused by subclasses.
+        recv_generator should be a generator yielding tuples of (_, data).
+        That is, the first element of the tuple is ignored.
+        recv_generator should NOT yield the data from the very first YIELD reply.
+        """
+        def _send(method, args):
+            _, msg_list = self._build_request(
+                method, args, None, False, req_id=req_id)
+            logger.debug('send: %r' % msg_list)
+            self.socket.send_multipart(msg_list)
+            
+        try:
+            _send('YIELD_SEND', None)
+            while True:
+                _, obj = next(recv_generator)
+                try:
+                    to_send = yield obj
+                except Exception, e:
+                    logger.debug('generator.throw()')
+                    etype, evalue, _ = sys.exc_info()
+                    _send('YIELD_THROW', [str(etype.__name__), str(evalue)])
+                else:
+                    _send('YIELD_SEND', to_send)
+        except StopIteration:
+            return
+        except GeneratorExit, e:
+            logger.debug('generator.close()')
+            _send('YIELD_CLOSE', None)
+            
+            next(recv_generator)
+            raise e
+        except Exception, e:
+            logger.warning(e)
+            raise e
+        finally:
+            logger.debug('Exiting yield %s', req_id)
     #}
 #}
 
@@ -199,30 +247,42 @@ class SyncRPCClient(RPCClientBase):  #{
                     msg = self.socket.recv_multipart()
                     return msg
                 else:
-                    raise RPCTimeoutError("Request %s timed out after %s sec" % (req_id, timeout))
+                    raise RPCTimeoutError(
+                        "Request %s timed out after %s sec" % (req_id, timeout))
         else:
             recv_multipart = self.socket.recv_multipart
+            
+        def recv_yielder():
+            while True:
+                msg_list = recv_multipart()
+                logger.debug('received: %r' % msg_list)
 
-        while True:
-            msg_list = recv_multipart()
-            logger.debug('received: %r' % msg_list)
+                reply = self._parse_reply(msg_list)
 
-            reply = self._parse_reply(msg_list)
-
-            if reply is None \
-            or reply['req_id'] != req_id:
-                continue
-
-            if reply['type'] == b'ACK':
-                if ignore:
-                    return None
-                else:
+                if reply is None \
+                or reply['req_id'] != req_id:
                     continue
 
-            if reply['type'] == b'OK':
-                return reply['result']
-            else:
-                raise reply['result']
+                if reply['type'] == b'ACK':
+                    if ignore:
+                        yield b'OK', None
+                        return
+                    else:
+                        continue
+
+                if reply['type'] == b'FAIL':
+                    raise reply['result']
+                    
+                yield reply['type'], reply['result']
+                if reply['type'] == b'OK':
+                    return
+        
+        recv_generator = recv_yielder()
+        reply_type, result = next(recv_generator)
+        if reply_type == b'OK':
+            return result
+        else:
+            return self._yielder(recv_generator, req_id)
     #}
 #}
 
