@@ -69,7 +69,7 @@ Using generators over RPC will allow you to:
 
 Generators being part of the Python language itself (yield expression), you can express all of these usages naturally in the code.
 
-Generators are semicoroutines. They might be powerful, they also have some limitations. The communication flow is fully synchronous. For instance, your service cannot prepare its next reply until the client called next() on it. You can see the yield expression and the next(), send(), throw() and close() calls as blocking. However, you can use threads or coroutines on either sideq to allow asynchronous processes.
+Generators are semicoroutines. They might be powerful, they also have some limitations. The communication flow is fully synchronous. For instance, your service cannot prepare its next reply until the client called next() on it. You can see the yield expression and the next(), send(), throw() and close() calls as blocking. However, you can use threads or coroutines on either sides to allow asynchronous processes.
 
 Example of a service yielding:
 
@@ -89,9 +89,11 @@ def echo(value=None):
                 value = e
     finally:
         print "Don't forget to clean up when 'close()' is called."
+        
+echo_service.start().join()
 ```
 
-Example of a client consumming a generator:
+Example of a client consuming a generator (S> are print-out from the service):
 
 ```python
 from netcall.green import GeventRPCClient
@@ -100,7 +102,7 @@ client = GeventRPCClient()
 
 generator = client.echo(1)
 print generator.next()
-> Execution starts when 'next()' is called for the first time.
+S> Execution starts when 'next()' is called for the first time.
 > 1
 print generator.next()
 > None
@@ -109,6 +111,6 @@ print generator.send(2)
 generator.throw(TypeError, "spam")
 > TypeError('spam',)
 generator = None # implicitly call generator.close()
-> Don't forget to clean up when 'close()' is called.
+S> Don't forget to clean up when 'close()' is called.
 ```
 
