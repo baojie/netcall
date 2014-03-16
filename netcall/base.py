@@ -9,7 +9,8 @@ Authors:
 
 """
 #-----------------------------------------------------------------------------
-#  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov
+#  Copyright (C) 2012-2014. Brian Granger, Min Ragan-Kelley, Alexander Glyzov,
+#  Axel Voitier
 #
 #  Distributed under the terms of the BSD License.  The full license is in
 #  the file LICENSE distributed as part of this software.
