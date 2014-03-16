@@ -353,12 +353,16 @@ class RPCServiceBase(RPCBase):  #{
         if func is None:
             if name is None:
                 raise ValueError("at least one argument is required")
+
             return partial(self.register, name=name)
         else:
             if not callable(func):
                 raise ValueError("func argument should be callable")
             if name is None:
                 name = func.__name__
+            if name in self._RESERVED:
+                raise ValueError("{} is a reserved function name".format(name))
+
             self.procedures[name] = func
 
         return func
@@ -403,7 +407,7 @@ class RPCServiceBase(RPCBase):  #{
         client.random.randint(10, 30) # Returns an int
         """
         for name in dir(obj):
-            if name.startswith('_') or (name in restricted):
+            if name.startswith('_') or (name in restricted) or (name in self._RESERVED):
                 continue
             try:    proc = getattr(obj, name)
             except: continue
