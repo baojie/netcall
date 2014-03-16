@@ -106,13 +106,13 @@ class RPCCallsMixIn(object):  #{
 
         @self.service.register
         def fn_vargs_vkwargs(*args, **kwargs):
-            return args[0] * kwargs.values()[0]
-
+            return args[0] * sorted(kwargs.items())[0][1]
+            
         self.service.start()
 
         self.assertEqual(self.client.fn_one_arg_one_kwarg(7, arg2=3), 21)
-        self.assertEqual(self.client.fn_vargs_vkwargs(7, arg2=3), 21)
-
+        self.assertEqual(self.client.fn_vargs_vkwargs(7, 5, argA=3, argB=18), 21)
+        
     def test_object(self):
         toy = ToyObject(12)
         self.service.register_object(toy)
@@ -144,18 +144,18 @@ class RPCCallsMixIn(object):  #{
         self.service.start()
 
         self.assertNotImplementedRemotely('value')
-        self.assertEqual(self.client.a.value(), 0)
-        self.assertEqual(self.client.b.value(), 1)
-        self.assertEqual(self.client.c.value(), 2)
-
+        self.assertEqual(self.client.a.value(), toys[0].value())
+        self.assertEqual(self.client.b.value(), toys[1].value())
+        self.assertEqual(self.client.c.value(), toys[2].value())
+        
     def test_object_namespace_n_levels(self):
         toy = ToyObject(12)
         self.service.register_object(toy, namespace='this.has.a.toy')
 
         self.service.start()
-
-        self.assertEqual(self.client.this.has.a.toy.value(), 12)
-
+        
+        self.assertEqual(self.client.this.has.a.toy.value(), toy.value())
+        
     def test_object_module(self):
         import random
         self.service.register_object(random)
