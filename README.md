@@ -18,8 +18,9 @@ added new features and examples.
 * Asynchronous servers (IOLoop or Gevent)
 * Both synchronous and asynchronous clients (IOLoop or Gevent)
 * Ability to set a timeout on RPC calls
-* Ability to run multple services in a single process
+* Ability to run multiple services in a single process
 * Pluggable serialization (Pickle [default], JSON, [MessagePack](http://msgpack.org/))
+* Support generators (functions yielding) over RPC, including bi-directional capabilities (next(), send(), throw() and close()).
 
 ## Example
 
@@ -58,6 +59,57 @@ p.hello('World')
 
 See other [examples](https://github.com/aglyzov/netcall/tree/master/examples).
 
+## Generators
 
+Using generators over RPC will allow you to:
+* Push data to a client whenever your service is ready to produce them.
+* Control the flow of data whenever the client is ready to receive them.
+* Have the client send data (and throw exceptions!) to the service during the communication process.
+* Have the client cancel the transmission in the middle.
+
+Generators being part of the Python language itself (yield expression), you can express all of these usages naturally in the code.
+
+Generators are semicoroutines. They might be powerful, they also have some limitations. The communication flow is fully synchronous. For instance, your service cannot prepare its next reply until the client called next() on it. You can see the yield expression and the next(), send(), throw() and close() calls as blocking. However, you can use threads or coroutines on either sideq to allow asynchronous processes.
+
+Example of a service yielding:
+
+```python
+from netcall.green import GeventRPCService
+
+echo_service = GeventRPCService()
+
+@echo_service.register
+def echo(value=None):
+    print "Execution starts when 'next()' is called for the first time."
+    try:
+        while True:
+            try:
+                value = (yield value)
+            except Exception, e:
+                value = e
+    finally:
+        print "Don't forget to clean up when 'close()' is called."
+```
+
+Example of a client consumming a generator:
+
+```python
+from netcall.gree import GeventRPCClient
+
+client = GeventRPCClient()
+
+generator = client.echo(1)
+print generator.next()
+> Execution starts when 'next()' is called for the first time.
+> 1
+print generator.next()
+> None
+print generator.send(2)
+> 2
+generator.throw(TypeError, "spam")
+> TypeError('spam',)
+generator = None # implicitly call generator.close()
+> Don't forget to clean up when 'close()' is called.
+```
 
 [![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/aglyzov/netcall/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
