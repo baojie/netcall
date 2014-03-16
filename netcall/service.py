@@ -33,7 +33,7 @@ from zmq.utils               import jsonapi
 from .base import RPCBase
 
 
-logger = getLogger("netcall")
+logger = getLogger("netcall.service")
 
 
 #-----------------------------------------------------------------------------
@@ -69,6 +69,7 @@ class RPCServiceBase(RPCBase):  #{
     def _send_ack(self, request):  #{
         "Send an ACK notification"
         reply = self._build_reply(request, b'ACK', [self.service_id])
+        logger.debug('send: %r' % reply)
         self.socket.send_multipart(reply)
     #}
     def _send_ok(self, request, result):  #{
@@ -88,6 +89,7 @@ class RPCServiceBase(RPCBase):  #{
         }
         data_list = [jsonapi.dumps(error_dict)]
         reply = self._build_reply(request, b'FAIL', data_list)
+        logger.debug('send: %r' % reply)
         self.socket.send_multipart(reply)
     #}
     def _parse_request(self, msg_list):  #{

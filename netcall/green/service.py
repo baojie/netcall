@@ -30,7 +30,7 @@ from zmq import green
 from ..service import RPCServiceBase
 
 
-logger = getLogger("netcall")
+logger = getLogger("netcall.service")
 
 
 #-----------------------------------------------------------------------------
@@ -111,8 +111,9 @@ class GeventRPCService(RPCServiceBase):
             while True:
                 try:
                     request = self.socket.recv_multipart()
+                    logger.debug('received: %r' % request)
                 except Exception, e:
-                    print e
+                    logger.warning(e)
                     break
                 gevent.spawn(self._handle_request, request)
             self.greenlet = None  # cleanup

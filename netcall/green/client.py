@@ -30,7 +30,7 @@ from gevent.event import Event, AsyncResult
 from ..client import RPCClientBase, RPCTimeoutError
 
 
-logger = getLogger("netcall")
+logger = getLogger("netcall.client")
 
 #-----------------------------------------------------------------------------
 # RPC Service Proxy
@@ -109,7 +109,7 @@ class GeventRPCClient(RPCClientBase):
                 reply = self._parse_reply(msg_list)
 
                 if reply is None:
-                    #logger.debug('skipping invalid reply')
+                    logger.debug('skipping invalid reply')
                     continue
 
                 req_id   = reply['req_id']
@@ -117,20 +117,20 @@ class GeventRPCClient(RPCClientBase):
                 result   = reply['result']
 
                 if msg_type == b'ACK':
-                    #logger.debug('skipping ACK, req_id=%r' % req_id)
+                    logger.debug('skipping ACK, req_id=%r' % req_id)
                     continue
 
                 async = results.pop(req_id, None)
                 if async is None:
                     # result is gone, must be a timeout
-                    #logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
+                    logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
                     continue
 
-                if msg_type == b'OK':
-                    #logger.debug('async.set(result), req_id=%r' % req_id)
+                if msg_type in [b'OK', b'YIELD']:
+                    logger.debug('async.set(result), req_id=%r' % req_id)
                     async.set(result)
                 else:
-                    #logger.debug('async.set_exception(result), req_id=%r' % req_id)
+                    logger.debug('async.set_exception(result), req_id=%r' % req_id)
                     async.set_exception(result)
 
         logger.warning('_reader exited')
@@ -171,7 +171,8 @@ class GeventRPCClient(RPCClientBase):
             raise RuntimeError('bind or connect must be called first')
 
         req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
-
+        
+        logger.debug('send: %r' % msg_list)
         self.socket.send_multipart(msg_list)
 
         if ignore:
@@ -188,7 +189,7 @@ class GeventRPCClient(RPCClientBase):
 
         result = AsyncResult()
         self._results[req_id] = result
-        #logger.debug('waiting for result=%r' % result)
+        logger.debug('waiting for result=%r' % result)
         return result.get()  # block waiting for a reply passed by ._reader
     #}
 

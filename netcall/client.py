@@ -32,7 +32,7 @@ from zmq.utils               import jsonapi
 from .base import RPCBase
 
 
-logger = getLogger("netcall")
+logger = getLogger("netcall.client")
 
 
 #-----------------------------------------------------------------------------
@@ -183,6 +183,7 @@ class SyncRPCClient(RPCClientBase):  #{
 
         req_id, msg_list = self._build_request(proc_name, args, kwargs, ignore)
 
+        logger.debug('send: %r' % msg_list)
         self.socket.send_multipart(msg_list)
 
         if timeout and timeout > 0:
