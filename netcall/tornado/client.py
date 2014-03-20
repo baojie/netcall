@@ -20,8 +20,6 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from logging import getLogger
-
 import zmq
 
 from zmq.eventloop.zmqstream import ZMQStream
@@ -29,10 +27,9 @@ from zmq.eventloop.ioloop    import IOLoop, DelayedCallback
 
 from tornado.concurrent import Future
 
-from ..client import RPCClientBase, RemoteMethodBase, RPCTimeoutError
-
-
-logger = getLogger("netcall")
+from ..base   import RPCClientBase
+from ..utils  import RemoteMethodBase, logger
+from ..errors import RPCTimeoutError
 
 
 #-----------------------------------------------------------------------------

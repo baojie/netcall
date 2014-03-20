@@ -20,17 +20,12 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from logging import getLogger
-
 import gevent
 import zmq
 
 from zmq import green
 
-from ..service import RPCServiceBase
-
-
-logger = getLogger("netcall")
+from ..base import RPCServiceBase
 
 
 #-----------------------------------------------------------------------------

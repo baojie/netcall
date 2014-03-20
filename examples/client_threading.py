@@ -4,7 +4,7 @@
 """ A simple asynchronous RPC client that shows how to:
 
     * use specific serializer
-    * make multiple RPC calls at the same time using Gevent
+    * make multiple RPC calls at the same time using the Python threading API
     * handle remote exceptions
     * do load balancing
 """
@@ -16,8 +16,8 @@
 #  the file LICENSE distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-from gevent        import spawn, joinall
-from netcall.green import GeventRPCClient, RemoteRPCError, RPCTimeoutError, JSONSerializer
+from netcall.threading import ThreadingRPCClient, ThreadPool
+from netcall import RemoteRPCError, RPCTimeoutError, JSONSerializer
 
 def printer(msg, func, *args):
     "run a function, print results"
@@ -29,9 +29,12 @@ if __name__ == '__main__':
     #from netcall import setup_logger
     #setup_logger()
 
+    pool  = ThreadPool(128)
+    spawn = lambda f, *ar, **kw: pool.schedule(f, args=ar, kwargs=kw)
+
     # Custom serializer/deserializer functions can be passed in. The server
     # side ones must match.
-    echo = GeventRPCClient(serializer=JSONSerializer())
+    echo = ThreadingRPCClient(pool=pool, serializer=JSONSerializer())
     echo.connect('tcp://127.0.0.1:5555')
 
     tasks = [spawn(printer, "[echo] Echoing \"Hi there\"", echo.echo, "Hi there")]
@@ -61,7 +64,7 @@ if __name__ == '__main__':
 
     tasks.append(spawn(printer, "[echo] Sleeping for 2 seconds...", echo.sleep, 2.0))
 
-    math = GeventRPCClient()
+    math = ThreadingRPCClient(pool=pool)
     # By connecting to two instances, requests are load balanced.
     math.connect('tcp://127.0.0.1:5556')
     math.connect('tcp://127.0.0.1:5557')
@@ -72,5 +75,6 @@ if __name__ == '__main__':
                 spawn(printer, "[math] Adding: %s + %s" % (i, j), math.add, i, j)
             )
 
-    joinall(tasks)
+    for task in tasks:
+        task.wait()
 

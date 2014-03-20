@@ -20,17 +20,15 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from logging import getLogger
-
 from zmq import green
 
 from gevent       import spawn, spawn_later
 from gevent.event import Event, AsyncResult
 
-from ..client import RPCClientBase, RPCTimeoutError
+from ..base   import RPCClientBase
+from ..utils  import logger
+from ..errors import RPCTimeoutError
 
-
-logger = getLogger("netcall")
 
 #-----------------------------------------------------------------------------
 # RPC Service Proxy
