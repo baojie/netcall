@@ -3,14 +3,13 @@
 from gevent import monkey
 monkey.patch_all()
 
-from os       import removedirs
-from tempfile import mkdtemp
 from unittest import TestCase
 
 from netcall.green import GeventRPCClient, GeventRPCService
 
 from test_client_base import BaseClientTest
 from test_rpc_base import BaseRPCTest
+
 
 class GeventClientTest(BaseClientTest, TestCase):
 
