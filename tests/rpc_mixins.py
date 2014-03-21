@@ -1,42 +1,33 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-from os       import removedirs
-from tempfile import mkdtemp
-
 from netcall import RemoteRPCError
 
 
-class BaseRPCTest(object):  #{
-
-    @classmethod
-    def setUpClass(cls):
-        cls.tmp_dir = mkdtemp(prefix='netcall-test-')
-        cls.url    = 'ipc://%s/test-ipc' % (cls.tmp_dir)
-
-    @classmethod
-    def tearDownClass(cls):
-        removedirs(cls.tmp_dir)
+class RPCCallsMixIn(object):  #{
 
     def setUp(self):
-        # Setup of self.client and self.service by child classes
+        super(RPCCallsMixIn, self).setUp()
+
         assert self.client
         assert self.service
 
+        self.url = self.urls[0]
         self.service.bind(self.url)
         self.client.connect(self.url)
 
-    def tearDown(self):
-        self.client.socket.close(0)
-        self.service.socket.close(0)
 
     def assertNotImplementedRemotely(self, func_name):
-        with self.assertRaisesRegexp(RemoteRPCError, "NotImplementedError: Unregistered procedure '%s'" % func_name):
+        err_msg = "NotImplementedError: Unregistered procedure '%s'" % func_name
+        with self.assertRaisesRegexp(RemoteRPCError, err_msg):
             self.client.call(func_name)
 
     def test_netcall_restricted(self):
         self.service.start()
-        restricted_fields = ['register','register_object','proc','task','start','stop','serve',
-                 'reset', 'connect', 'bind', 'bind_ports']
+        restricted_fields = [
+            'register','register_object','proc','task',
+            'start','stop','serve','shutdown',
+            'reset','connect','bind','bind_ports'
+        ]
         for f in restricted_fields:
             self.assertNotImplementedRemotely(f)
 

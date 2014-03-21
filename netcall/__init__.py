@@ -51,7 +51,7 @@ To talk to this service:
 # for gevent versions of the classes import netcall.green
 
 from .base       import RPCServiceBase, RPCClientBase
-from .utils      import logger, RemoteMethod, ThreadPool
+from .utils      import logger, RemoteMethod, ThreadPool, get_zmq_classes, detect_green_env
 from .errors     import RPCError, RemoteRPCError, RPCTimeoutError
 from .serializer import *
 

@@ -73,7 +73,7 @@ def setup_logger(logger='netcall', level=DEBUG, stream=stderr):  #{
         logger = getLogger(logger)
 
     handler   = StreamHandler(stream)
-    formatter = Formatter("%(levelname)s:%(name)s:%(message)s")
+    formatter = Formatter("[%(process)s/%(threadName)s]:%(levelname)s:%(name)s:%(funcName)s():%(message)s")
     handler.setLevel(level)
     handler.setFormatter(formatter)
     logger.setLevel(level)

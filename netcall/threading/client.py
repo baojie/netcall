@@ -67,19 +67,24 @@ class ThreadingRPCClient(RPCClientBase):
 
         super(ThreadingRPCClient, self).__init__(**kwargs)  # base class
 
-        self.pool = pool or ThreadPool(128)
+        if pool is None:
+            self.pool      = ThreadPool(128)
+            self._ext_pool = False
+        else:
+            self.pool      = pool
+            self._ext_pool = True
 
         self._ready_ev = Event()
         self._results  = {}  # {<msg-id> : <Future>}
 
         # request drainage
         self.req_queue = Queue(maxsize=self.pool._workers)
-        self.req_push  = self.context.socket(zmq.PUSH)
+        self.req_pub   = self.context.socket(zmq.PUB)
         self.req_addr  = 'inproc://%s-%s' % (
             self.__class__.__name__,
             b'%08x' % randint(0, 0xFFFFFFFF)
         )
-        self.req_push.bind(self.req_addr)
+        self.req_pub.bind(self.req_addr)
 
         # maintaining threads
         self.io_thread  = self.pool.schedule(self._io_thread)
@@ -101,24 +106,23 @@ class ThreadingRPCClient(RPCClientBase):
         return result
     #}
     def _req_thread(self):  #{
-        """ Forwards results from req_queue to the req_push socket
+        """ Forwards results from req_queue to the req_pub socket
             so that an I/O thread could send them forth to a service
         """
         rcv_request = self.req_queue.get
-        fwd_request = self.req_push.send_multipart
+        fwd_request = self.req_pub.send_multipart
         try:
             while True:
                 request = rcv_request()
                 #logger.debug('req_thread received %r' % request)
                 if request is None:
-                    logger.debug('req_thread received a shutdown signal')
-                    fwd_request([None])  # pass the shutdown signal to the io_thread
-                    break                # and exit
+                    logger.debug('req_thread received an EXIT signal')
+                    fwd_request([''])  # pass the EXIT signal to the io_thread
+                    break              # and exit
                 fwd_request(request)
         except Exception, e:
             logger.error(e, exc_info=True)
 
-        self.req_thread = None  # cleanup
         logger.debug('req_thread exited')
     #}
     def _io_thread(self):  #{
@@ -131,13 +135,14 @@ class ThreadingRPCClient(RPCClientBase):
         results  = self._results
 
         srv_sock = self.socket
-        req_pull = self.context.socket(zmq.PULL)
-        req_pull.connect(self.req_addr)
+        req_sub = self.context.socket(zmq.SUB)
+        req_sub.connect(self.req_addr)
+        req_sub.setsockopt(zmq.SUBSCRIBE, '')
 
         _, Poller = get_zmq_classes()
         poller = Poller()
         poller.register(srv_sock, zmq.POLLIN)
-        poller.register(req_pull, zmq.POLLIN)
+        poller.register(req_sub,  zmq.POLLIN)
         poll = poller.poll
 
         running = True
@@ -156,11 +161,10 @@ class ThreadingRPCClient(RPCClientBase):
                     for socket, _ in poll():
                         if socket is srv_sock:
                             reply_list = srv_sock.recv_multipart()
-                            # handle request in a thread-pool
-                        elif socket is req_pull:
-                            request = req_pull.recv_multipart()
-                            if request[0] is None:
-                                logger.debug('io_thread received a shutdown signal')
+                        elif socket is req_sub:
+                            request = req_sub.recv_multipart()
+                            if not request[0]:
+                                logger.debug('io_thread received an EXIT signal')
                                 running = False
                                 break
                             logger.debug('io_thread sending %r' % request)
@@ -203,19 +207,9 @@ class ThreadingRPCClient(RPCClientBase):
                     future.set_exception(result)
 
         # -- cleanup --
-        self.io_thread = None
-        req_pull.close()
+        req_sub.close(0)
 
         logger.debug('io_thread exited')
-    #}
-    def shutdown(self):  #{
-        """Close the socket and signal the io_thread to exit"""
-        self._ready = False
-        self._ready_ev.set()
-        self.req_queue.put(None)  # signal the req and io threads to exit
-        self.socket.close()
-        self.req_push.close()
-        self._ready_ev.clear()
     #}
     def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
         """
@@ -271,5 +265,27 @@ class ThreadingRPCClient(RPCClientBase):
         finally:
             timer and timer.cancel()
         return result
+    #}
+    def shutdown(self):  #{
+        """Close the socket and signal the io_thread to exit"""
+        self._ready = False
+        self._ready_ev.set()
+
+        logger.debug('signaling the threads to exit')
+        self.req_queue.put(None)  # signal the req and io threads to exit
+        self.io_thread.wait()
+        self.req_thread.wait()
+
+        self._ready_ev.clear()
+
+        logger.debug('closing the sockets')
+        self.socket.close(0)
+        self.req_pub.close(0)
+
+        if not self._ext_pool:
+            logger.debug('stopping the pool')
+            self.pool.close()
+            self.pool.stop()
+            self.pool.join()
     #}
 

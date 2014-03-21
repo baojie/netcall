@@ -20,8 +20,9 @@ Authors
 # Imports
 #-----------------------------------------------------------------------------
 
-from random  import randint
-from Queue   import Queue
+from random    import randint
+from Queue     import Queue
+from threading import Event
 
 import zmq
 
@@ -59,19 +60,25 @@ class ThreadingRPCService(RPCServiceBase):
 
         super(ThreadingRPCService, self).__init__(**kwargs)
 
-        self.pool = pool or ThreadPool(128)
+        if pool is None:
+            self.pool      = ThreadPool(128)
+            self._ext_pool = False
+        else:
+            self.pool      = pool
+            self._ext_pool = True
 
         self.io_thread  = None
         self.res_thread = None
 
         # result drainage
+        self._sync_ev  = Event()
         self.res_queue = Queue(maxsize=self.pool._workers)
-        self.res_push  = self.context.socket(zmq.PUSH)
+        self.res_pub   = self.context.socket(zmq.PUB)
         self.res_addr  = 'inproc://%s-%s' % (
             self.__class__.__name__,
             b'%08x' % randint(0, 0xFFFFFFFF)
         )
-        self.res_push.bind(self.res_addr)
+        self.res_pub.bind(self.res_addr)
     #}
     def _create_socket(self):  #{
         super(ThreadingRPCService, self)._create_socket()
@@ -79,7 +86,7 @@ class ThreadingRPCService(RPCServiceBase):
     #}
     def _send_reply(self, reply):  #{
         """ Send a multipart reply to a caller.
-            Here we send the reply down the internal res_push socket
+            Here we send the reply down the internal res_pub socket
             so that an io_thread could send it back to the caller.
 
             Notice: reply is a list produced by self._build_reply()
@@ -136,48 +143,78 @@ class ThreadingRPCService(RPCServiceBase):
         assert self.io_thread is None and self.res_thread is None, 'already started'
 
         def res_thread():  #{
-            """ Forwards results from res_queue to the res_push socket
+            """ Forwards results from res_queue to the res_pub socket
                 so that an I/O thread could send them back to a caller
             """
             rcv_result = self.res_queue.get
-            fwd_result = self.res_push.send_multipart
+            fwd_result = self.res_pub.send_multipart
+
             try:
+                # synchronizing with the I/O thread
+                sync = self._sync_ev
+                while not sync.is_set():
+                    fwd_result([b'SYNC'])
+                    sync.wait(0.05)
+                logger.debug('RES thread is synchronized')
+
                 while True:
-                    fwd_result(rcv_result())
+                    result = rcv_result()
+                    if result is None:
+                        logger.debug('res_thread received an EXIT signal')
+                        fwd_result([b''])  # pass the EXIT signal to the io_thread
+                        break
+                    else:
+                        fwd_result(result)
             except Exception, e:
                 logger.error(e, exc_info=True)
 
-            self.res_thread = None  # cleanup
+            logger.debug('res_thread exited')
         #}
         def io_thread():  #{
             task_sock = self.socket
-            res_pull  = self.context.socket(zmq.PULL)
-            res_pull.connect(self.res_addr)
+            res_sub   = self.context.socket(zmq.SUB)
+            res_sub.connect(self.res_addr)
+            res_sub.setsockopt(zmq.SUBSCRIBE, '')
 
             handle_request = self._handle_request
 
-            _, Poller = get_zmq_classes()
-            poller = Poller()
-            poller.register(task_sock, zmq.POLLIN)
-            poller.register(res_pull,  zmq.POLLIN)
-            poll = poller.poll
-
             try:
-                while True:
+                # synchronizing with the res_thread
+                sync = res_sub.recv_multipart()
+                assert sync[0] == 'SYNC'
+                logger.debug('I/O thread is synchronized')
+                self._sync_ev.set()
+
+                _, Poller = get_zmq_classes()
+                poller = Poller()
+                poller.register(task_sock, zmq.POLLIN)
+                poller.register(res_sub,   zmq.POLLIN)
+                poll = poller.poll
+
+                running = True
+
+                while running:
                     for socket, _ in poll():
                         if socket is task_sock:
                             request = task_sock.recv_multipart()
                             # handle request in a thread-pool
                             self.pool.schedule(handle_request, args=(request,))
-                        elif socket is res_pull:
-                            result = res_pull.recv_multipart()
-                            task_sock.send_multipart(result)
+                        elif socket is res_sub:
+                            result = res_sub.recv_multipart()
+                            #logger.debug('received a result: %r' % result)
+                            if not result[0]:
+                                logger.debug('io_thread received an EXIT signal')
+                                running = False
+                                break
+                            else:
+                                task_sock.send_multipart(result)
             except Exception, e:
                 logger.error(e, exc_info=True)
 
             # -- cleanup --
-            res_pull.close()
-            self.io_thread = None
+            res_sub.close(0)
+
+            logger.debug('io_thread exited')
         #}
 
         self.res_thread = self.pool.schedule(res_thread)
@@ -186,8 +223,26 @@ class ThreadingRPCService(RPCServiceBase):
         return self.res_thread, self.io_thread
     #}
     def stop(self):  #{
-        """ Stop the RPC service (non-blocking) """
-        raise NotImplementedError("TODO: signal threads to quit")
+        """ Stop the RPC service (semi-blocking) """
+        if (self.res_thread and not self.res_thread.ready):
+            logger.debug('signaling the threads to exit')
+            self.res_queue.put(None)
+            self.res_thread.wait()
+            self.io_thread.wait()
+    #}
+    def shutdown(self):  #{
+        """ Signal the threads to exit and close all sockets """
+        self.stop()
+
+        logger.debug('closing the sockets')
+        self.socket.close(0)
+        self.res_pub.close(0)
+
+        if not self._ext_pool:
+            logger.debug('stopping the pool')
+            self.pool.close()
+            self.pool.stop()
+            self.pool.join()
     #}
     def serve(self):  #{
         """ Serve RPC requests (blocking)

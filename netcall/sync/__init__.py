@@ -6,7 +6,7 @@ import zmq
 
 from ..base   import RPCClientBase
 from ..errors import RPCTimeoutError
-from ..utils  import logger
+from ..utils  import logger, get_zmq_classes
 
 
 #-----------------------------------------------------------------------------
@@ -27,8 +27,14 @@ class SyncRPCClient(RPCClientBase):  #{
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        assert context is None or isinstance(context, zmq.Context)
-        self.context = context if context is not None else zmq.Context.instance()
+        Context, _ = get_zmq_classes()
+
+        if context is None:
+            self.context = Context.instance()
+        else:
+            assert isinstance(context, Context)
+            self.context = context
+
         super(SyncRPCClient, self).__init__(**kwargs)
     #}
 

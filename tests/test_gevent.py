@@ -1,25 +1,34 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
-from gevent import monkey
-monkey.patch_all()
-
-from unittest import TestCase
-
 from netcall.green import GeventRPCClient, GeventRPCService
 
-from test_client_base import BaseClientTest
-from test_rpc_base import BaseRPCTest
+from .base          import BaseCase
+from .client_mixins import ClientBindConnectMixIn
+from .rpc_mixins    import RPCCallsMixIn
 
 
-class GeventClientTest(BaseClientTest, TestCase):
-
-    def setUp(self):
-        self.client = GeventRPCClient()
-        super(GeventClientTest, self).setUp()
-
-class GeventRPCTest(BaseRPCTest, TestCase):
+class GeventBase(BaseCase):
 
     def setUp(self):
-        self.client = GeventRPCClient()
-        self.service = GeventRPCService()
-        super(GeventRPCTest, self).setUp()
+        from zmq.green import Context
+
+        self.context = Context()
+        self.client  = GeventRPCClient(context=self.context)
+        self.service = GeventRPCService(context=self.context)
+
+        super(GeventBase, self).setUp()
+
+    def tearDown(self):
+        self.client.shutdown()
+        self.service.shutdown()
+        self.context.term()
+
+        super(GeventBase, self).tearDown()
+
+
+class GeventClientBindConnectTest(ClientBindConnectMixIn, GeventBase):
+    pass
+
+class GeventRPCCallsTest(RPCCallsMixIn, GeventBase):
+    pass
+

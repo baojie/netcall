@@ -28,7 +28,6 @@ from functools import partial
 
 import zmq
 from zmq.utils               import jsonapi
-from zmq.eventloop.zmqstream import ZMQStream
 
 from .serializer import PickleSerializer
 from .errors     import RemoteRPCError, RPCError
@@ -72,12 +71,19 @@ class RPCBase(object):  #{
 
     def reset(self):  #{
         """Reset the socket/stream."""
-        if isinstance(self.socket, (zmq.Socket, ZMQStream)):
+        if self.socket is not None:
             self.socket.close(linger=0)
         self._create_socket()
         self._ready    = False
         self.bound     = set()
         self.connected = set()
+    #}
+
+    def shutdown(self):  #{
+        """ Deallocate resources (cleanup)
+        """
+        logger.debug('closing the socket')
+        self.socket.close(0)
     #}
 
     def bind(self, urls, only=False):  #{
@@ -175,7 +181,7 @@ class RPCBase(object):  #{
 class RPCServiceBase(RPCBase):  #{
 
     _RESERVED = ['register','register_object','proc','task','start','stop','serve',
-                 'reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
+                 'shutdown','reset', 'connect', 'bind', 'bind_ports'] # From RPCBase
 
     def __init__(self, *args, **kwargs):  #{
         """
