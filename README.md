@@ -94,7 +94,7 @@ def echo(value=None):
 Example of a client consumming a generator:
 
 ```python
-from netcall.gree import GeventRPCClient
+from netcall.green import GeventRPCClient
 
 client = GeventRPCClient()
 
@@ -112,4 +112,3 @@ generator = None # implicitly call generator.close()
 > Don't forget to clean up when 'close()' is called.
 ```
 
-[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/aglyzov/netcall/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
