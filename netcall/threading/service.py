@@ -224,11 +224,13 @@ class ThreadingRPCService(RPCServiceBase):
     #}
     def stop(self):  #{
         """ Stop the RPC service (semi-blocking) """
-        if (self.res_thread and not self.res_thread.ready):
+        if self.res_thread and not self.res_thread.ready:
             logger.debug('signaling the threads to exit')
             self.res_queue.put(None)
             self.res_thread.wait()
             self.io_thread.wait()
+            self.res_thread = None
+            self.io_thread  = None
     #}
     def shutdown(self):  #{
         """ Signal the threads to exit and close all sockets """

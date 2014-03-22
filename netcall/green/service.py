@@ -23,9 +23,8 @@ Authors:
 import gevent
 import zmq
 
-from zmq import green
-
-from ..base import RPCServiceBase
+from ..base  import RPCServiceBase
+from ..utils import logger, get_zmq_classes
 
 
 #-----------------------------------------------------------------------------
@@ -47,10 +46,17 @@ class GeventRPCService(RPCServiceBase):
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        assert context is None or isinstance(context, green.Context)
-        self.context  = context if context is not None else green.Context.instance()
-        self.greenlet = None
+        Context, _ = get_zmq_classes()
+
+        if context is None:
+            self.context = Context.instance()
+        else:
+            assert isinstance(context, Context)
+            self.context = context
+
         super(GeventRPCService, self).__init__(**kwargs)
+
+        self.greenlet = None
     #}
     def _create_socket(self):  #{
         super(GeventRPCService, self)._create_socket()
@@ -106,18 +112,34 @@ class GeventRPCService(RPCServiceBase):
             while True:
                 try:
                     request = self.socket.recv_multipart()
-                except Exception, e:
-                    print e
+                except:
+                    #logger.warning('socket error', exc_info=True)
                     break
                 gevent.spawn(self._handle_request, request)
-            self.greenlet = None  # cleanup
+            logger.debug('receive_reply exited')
 
         self.greenlet = gevent.spawn(receive_reply)
         return self.greenlet
     #}
-    def stop(self):  #{
+    def stop(self, ):  #{
         """ Stop the RPC service (non-blocking) """
-        raise NotImplementedError("TODO: signal greenlet to quit")
+        if self.greenlet is None:
+            return  # nothing to do
+        bound     = self.bound
+        connected = self.connected
+        logger.debug('resetting the socket')
+        self.reset()
+        # wait for the greenlet to exit (closed socket)
+        self.greenlet.join()
+        self.greenlet = None
+        # restore bindings/connections
+        self.bind(bound)
+        self.connect(connected)
+    #}
+    def shutdown(self):  #{
+        """Close the socket and signal the reader greenlet to exit"""
+        self.stop()
+        self.socket.close(0)
     #}
     def serve(self, greenlets=[]):  #{
         """ Serve RPC requests (blocking)

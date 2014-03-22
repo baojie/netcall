@@ -20,13 +20,11 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from zmq import green
-
 from gevent       import spawn, spawn_later
 from gevent.event import Event, AsyncResult
 
 from ..base   import RPCClientBase
-from ..utils  import logger
+from ..utils  import logger, get_zmq_classes
 from ..errors import RPCTimeoutError
 
 
@@ -50,13 +48,20 @@ class GeventRPCClient(RPCClientBase):
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        assert context is None or isinstance(context, green.Context)
-        self.context   = context if context is not None else green.Context.instance()
+        Context, _ = get_zmq_classes()
+
+        if context is None:
+            self.context = Context.instance()
+        else:
+            assert isinstance(context, Context)
+            self.context = context
+
+        super(GeventRPCClient, self).__init__(**kwargs)  # base class
+
         self._ready_ev = Event()
         self._exit_ev  = Event()
         self.greenlet  = spawn(self._reader)
         self._results  = {}    # {<msg-id> : <gevent.AsyncResult>}
-        super(GeventRPCClient, self).__init__(**kwargs)  # base class
     #}
     def _create_socket(self):  #{
         super(GeventRPCClient, self)._create_socket()
@@ -83,16 +88,13 @@ class GeventRPCClient(RPCClientBase):
             fills matching async results thus passing control to waiting greenlets (see .call)
         """
         ready_ev = self._ready_ev
-        exit_ev  = self._exit_ev
         socket   = self.socket
         results  = self._results
+        running  = True
 
-        while True:
+        while running:
             ready_ev.wait()  # block until socket is bound/connected
             self._ready_ev.clear()
-
-            if exit_ev.is_set():
-                break  # a way to end the reader greenlet (see .shutdown())
 
             while self._ready:
                 try:
@@ -131,15 +133,23 @@ class GeventRPCClient(RPCClientBase):
                     #logger.debug('async.set_exception(result), req_id=%r' % req_id)
                     async.set_exception(result)
 
-        logger.warning('_reader exited')
+            if self._exit_ev.is_set():
+                logger.debug('_reader received an EXIT signal')
+                break
+
+        logger.debug('_reader exited')
     #}
     def shutdown(self):  #{
         """Close the socket and signal the reader greenlet to exit"""
+        logger.debug('closing the socket')
         self._ready = False
         self._exit_ev.set()
         self._ready_ev.set()
-        self.socket.close()
+        self.socket.close(0)
+        self.greenlet.join()
+        self.greenlet = None
         self._ready_ev.clear()
+        self._exit_ev.clear()
     #}
     def call(self, proc_name, args=[], kwargs={}, ignore=False, timeout=None):  #{
         """
