@@ -78,6 +78,7 @@ class ThreadingRPCClient(RPCClientBase):
         self._results  = {}  # {<msg-id> : <Future>}
 
         # request drainage
+        self._sync_ev  = Event()
         self.req_queue = Queue(maxsize=self.pool._workers)
         self.req_pub   = self.context.socket(zmq.PUB)
         self.req_addr  = 'inproc://%s-%s' % (
@@ -111,7 +112,15 @@ class ThreadingRPCClient(RPCClientBase):
         """
         rcv_request = self.req_queue.get
         fwd_request = self.req_pub.send_multipart
+
         try:
+            # synchronizing with the I/O thread
+            sync = self._sync_ev
+            while not sync.is_set():
+                fwd_request([b'SYNC'])
+                sync.wait(0.05)
+            logger.debug('REQ thread is synchronized')
+
             while True:
                 request = rcv_request()
                 #logger.debug('req_thread received %r' % request)
@@ -145,7 +154,16 @@ class ThreadingRPCClient(RPCClientBase):
         poller.register(req_sub,  zmq.POLLIN)
         poll = poller.poll
 
-        running = True
+        try:
+            # synchronizing with the req_thread
+            sync = req_sub.recv_multipart()
+            assert sync[0] == 'SYNC'
+            logger.debug('I/O thread is synchronized')
+            self._sync_ev.set()
+            running = True
+        except Exception, e:
+            running = False
+            logger.error(e, exc_info=True)
 
         while running:
             ready_ev.wait()  # block until socket is bound/connected

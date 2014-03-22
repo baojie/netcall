@@ -176,6 +176,12 @@ class ThreadingRPCService(RPCServiceBase):
             res_sub.connect(self.res_addr)
             res_sub.setsockopt(zmq.SUBSCRIBE, '')
 
+            _, Poller = get_zmq_classes()
+            poller = Poller()
+            poller.register(task_sock, zmq.POLLIN)
+            poller.register(res_sub,   zmq.POLLIN)
+            poll = poller.poll
+
             handle_request = self._handle_request
 
             try:
@@ -184,12 +190,6 @@ class ThreadingRPCService(RPCServiceBase):
                 assert sync[0] == 'SYNC'
                 logger.debug('I/O thread is synchronized')
                 self._sync_ev.set()
-
-                _, Poller = get_zmq_classes()
-                poller = Poller()
-                poller.register(task_sock, zmq.POLLIN)
-                poller.register(res_sub,   zmq.POLLIN)
-                poll = poller.poll
 
                 running = True
 
