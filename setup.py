@@ -4,10 +4,10 @@ from setuptools import setup, find_packages
 
 setup(
     name = "netcall",
-    version = "0.3",
+    version = "0.3.1",
     packages = find_packages(),
 
-    install_requires = ['pyzmq'],
+    install_requires = ['pyzmq', 'pebble'],
 
     author = "Alexander Glyzov",
     author_email = "bonoba@gmail.com",
