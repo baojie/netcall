@@ -3,9 +3,8 @@
 from __future__ import absolute_import
 
 from sys     import stderr, modules
-from imp     import find_module, new_module
+from imp     import new_module
 from runpy   import _get_module_details
-from os.path import join, dirname
 from logging import getLogger, DEBUG
 
 from pebble import ThreadPool
@@ -17,6 +16,25 @@ _gevent_cache = {}
 #-----------------------------------------------------------------------------
 # Utilies
 #-----------------------------------------------------------------------------
+
+def setup_logger(logger='netcall', level=DEBUG, stream=stderr):  #{
+    """ A utility function to setup a basic logging handler
+        for a given logger (netcall by default)
+    """
+    from logging import StreamHandler, Formatter
+
+    if isinstance(logger, basestring):
+        logger = getLogger(logger)
+
+    handler   = StreamHandler(stream)
+    formatter = Formatter("[%(process)s/%(threadName)s]:%(levelname)s:%(name)s:%(funcName)s():%(message)s")
+    handler.setLevel(level)
+    handler.setFormatter(formatter)
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+    return logger
+#}
 
 def import_module(name, cache=modules):  #{
     """Execute a module's code without importing it
@@ -36,52 +54,6 @@ def import_module(name, cache=modules):  #{
         __package__ = pkg_name
     )
     exec code in module.__dict__
-
-    return module
-#}
-def __import__broken(name, globals=None, locals=None, fromlist=None, cache=modules):  #{
-    if name in cache:
-        return cache[name]
-
-    parent = None
-    module = None
-    parts  = name.split('.')
-
-    for i, name in enumerate(parts):
-        fqname = '.'.join(parts[:i+1])
-
-        if fqname in cache:
-            module = cache[fqname]
-        else:
-            print fqname, name, parent
-            fp, pathname, description = find_module(name, parent and parent.__path__)
-
-            try:
-                if fp is None:
-                    is_pkg = True
-                    pathname = join(pathname, '__init__.py')
-                    fp = open(pathname)
-                else:
-                    is_pkg = False
-
-                module = new_module(fqname)
-                module.__name__    = fqname + ('.__main__' if is_pkg else '')
-                module.__path__    = [dirname(pathname)]
-                module.__file__    = pathname
-                module.__loader__  = None
-                module.__package__ = fqname if is_pkg else fqname.rpartition('.')[0]
-
-                exec fp in module.__dict__
-            finally:
-                # Since we may exit via an exception, close fp explicitly.
-                fp and fp.close()
-
-            if parent:
-                setattr(parent, name, module)
-
-            cache[fqname] = module
-
-        parent = module
 
     return module
 #}
@@ -162,7 +134,10 @@ def get_zmq_classes(env=None):  #{
         Context, Poller = green.Context, green.Poller
 
     elif env == 'eventlet':
-        from eventlet.green.zmq import Context, Poller
+        from eventlet.green.zmq import Context
+        class Poller(object):
+            def __init__(self, *args, **kwargs):
+                raise NotImplementedError('eventlet does not support ZeroMQ Poller')
 
     else:
         from zmq import Context, Poller
@@ -233,24 +208,23 @@ def get_green_tools(env=None):  #{
 
     return spawn, spawn_later, Event, Condition
 #}
+def green_device(inp, out, env=None):  #{
+    env   = env or detect_green_env() or 'gevent'
+    spawn = get_green_tools(env=env)[0]
 
-def setup_logger(logger='netcall', level=DEBUG, stream=stderr):  #{
-    """ A utility function to setup a basic logging handler
-        for a given logger (netcall by default)
-    """
-    from logging import StreamHandler, Formatter
+    def _inp_to_out():
+        while True:
+            out.send_multipart(inp.recv_multipart())
 
-    if isinstance(logger, basestring):
-        logger = getLogger(logger)
+    def _out_to_inp():
+        while True:
+            inp.send_multipart(out.recv_multipart())
 
-    handler   = StreamHandler(stream)
-    formatter = Formatter("[%(process)s/%(threadName)s]:%(levelname)s:%(name)s:%(funcName)s():%(message)s")
-    handler.setLevel(level)
-    handler.setFormatter(formatter)
-    logger.setLevel(level)
-    logger.addHandler(handler)
+    i2o = spawn(_inp_to_out)
+    o2i = spawn(_out_to_inp)
 
-    return logger
+    i2o.join()
+    o2i.join()
 #}
 
 class RemoteMethodBase(object):  #{
