@@ -27,9 +27,14 @@ class EventletBase(BaseCase):
         super(EventletBase, self).tearDown()
 
 
-class EventletClientBindConnectTest(ClientBindConnectMixIn, EventletBase):
-    pass
+try:
+    import eventlet
 
-class EventletRPCCallsTest(RPCCallsMixIn, EventletBase):
-    pass
+    class EventletClientBindConnectTest(ClientBindConnectMixIn, EventletBase):
+        pass
 
+    class EventletRPCCallsTest(RPCCallsMixIn, EventletBase):
+        pass
+
+except ImportError:
+    pass

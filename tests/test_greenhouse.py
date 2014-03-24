@@ -27,9 +27,16 @@ class GreenhouseBase(BaseCase):
 
         super(GreenhouseBase, self).tearDown()
 
+try:
+    raise ImportError  # disable immature greenhouse support
 
-class GeventClientBindConnectTest(ClientBindConnectMixIn, GreenhouseBase):
-    pass
+    import greenhouse
 
-class GeventRPCCallsTest(RPCCallsMixIn, GreenhouseBase):
+    class GeventClientBindConnectTest(ClientBindConnectMixIn, GreenhouseBase):
+        pass
+
+    class GeventRPCCallsTest(RPCCallsMixIn, GreenhouseBase):
+        pass
+
+except ImportError:
     pass

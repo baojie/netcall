@@ -27,9 +27,14 @@ class GeventBase(BaseCase):
         super(GeventBase, self).tearDown()
 
 
-class GeventClientBindConnectTest(ClientBindConnectMixIn, GeventBase):
-    pass
+try:
+    import gevent
 
-class GeventRPCCallsTest(RPCCallsMixIn, GeventBase):
-    pass
+    class GeventClientBindConnectTest(ClientBindConnectMixIn, GeventBase):
+        pass
 
+    class GeventRPCCallsTest(RPCCallsMixIn, GeventBase):
+        pass
+
+except ImportError:
+    pass
