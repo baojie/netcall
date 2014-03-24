@@ -1,7 +1,7 @@
 # vim: fileencoding=utf-8 et ts=4 sts=4 sw=4 tw=0 fdm=marker fmr=#{,#}
 
 """
-Gevent version of the RPC client
+Green version of the RPC client
 
 Authors:
 
@@ -20,35 +20,36 @@ Authors:
 # Imports
 #-----------------------------------------------------------------------------
 
-from gevent       import spawn, spawn_later
-from gevent.event import Event, AsyncResult
-
-from ..base   import RPCClientBase
-from ..utils  import logger, get_zmq_classes
-from ..errors import RPCTimeoutError
+from ..base    import RPCClientBase
+from ..utils   import logger, get_zmq_classes, detect_green_env, get_green_tools
+from ..errors  import RPCTimeoutError
+from ..futures import Future
 
 
 #-----------------------------------------------------------------------------
 # RPC Service Proxy
 #-----------------------------------------------------------------------------
 
-class GeventRPCClient(RPCClientBase):
+class GreenRPCClient(RPCClientBase):
     """ An asynchronous service proxy whose requests will not block.
-        Uses the Gevent compatibility layer of pyzmq (zmq.green).
+        Uses the Green compatibility layer of pyzmq (zmq.green).
     """
 
-    def __init__(self, context=None, **kwargs):  #{
+    def __init__(self, green_env=None, context=None, **kwargs):  #{
         """
         Parameters
         ==========
-        context : Context
+        green_env  : None | 'gevent' | 'eventlet' | 'greenhouse'
+        context    : <Context>
             An existing Context instance, if not passed, green.Context.instance()
             will be used.
-        serializer : Serializer
+        serializer : <Serializer>
             An instance of a Serializer subclass that will be used to serialize
             and deserialize args, kwargs and the result.
         """
-        Context, _ = get_zmq_classes()
+        self.green_env = green_env or detect_green_env() or 'gevent'
+
+        Context, _ = get_zmq_classes(env=self.green_env)
 
         if context is None:
             self.context = Context.instance()
@@ -56,28 +57,30 @@ class GeventRPCClient(RPCClientBase):
             assert isinstance(context, Context)
             self.context = context
 
-        super(GeventRPCClient, self).__init__(**kwargs)  # base class
+        super(GreenRPCClient, self).__init__(**kwargs)  # base class
+
+        spawn, _, Event, _ = get_green_tools(env=self.green_env)
 
         self._ready_ev = Event()
         self._exit_ev  = Event()
         self.greenlet  = spawn(self._reader)
-        self._results  = {}    # {<msg-id> : <gevent.AsyncResult>}
+        self._futures  = {}    # {<msg-id> : <Future>}
     #}
     def _create_socket(self):  #{
-        super(GeventRPCClient, self)._create_socket()
+        super(GreenRPCClient, self)._create_socket()
     #}
     def bind(self, *args, **kwargs):  #{
-        result = super(GeventRPCClient, self).bind(*args, **kwargs)
+        result = super(GreenRPCClient, self).bind(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
     #}
     def bind_ports(self, *args, **kwargs):  #{
-        result = super(GeventRPCClient, self).bind_ports(*args, **kwargs)
+        result = super(GreenRPCClient, self).bind_ports(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
     #}
     def connect(self, *args, **kwargs):  #{
-        result = super(GeventRPCClient, self).connect(*args, **kwargs)
+        result = super(GreenRPCClient, self).connect(*args, **kwargs)
         self._ready_ev.set()  # wake up _reader
         return result
     #}
@@ -89,7 +92,7 @@ class GeventRPCClient(RPCClientBase):
         """
         ready_ev = self._ready_ev
         socket   = self.socket
-        results  = self._results
+        futures  = self._futures
         running  = True
 
         while running:
@@ -120,18 +123,18 @@ class GeventRPCClient(RPCClientBase):
                     #logger.debug('skipping ACK, req_id=%r' % req_id)
                     continue
 
-                async = results.pop(req_id, None)
-                if async is None:
+                future = futures.pop(req_id, None)
+                if future is None:
                     # result is gone, must be a timeout
                     #logger.debug('async result is gone (timeout?): req_id=%r' % req_id)
                     continue
 
                 if msg_type == b'OK':
                     #logger.debug('async.set(result), req_id=%r' % req_id)
-                    async.set(result)
+                    future.set_result(result)
                 else:
                     #logger.debug('async.set_exception(result), req_id=%r' % req_id)
-                    async.set_exception(result)
+                    future.set_exception(result)
 
             if self._exit_ev.is_set():
                 logger.debug('_reader received an EXIT signal')
@@ -146,6 +149,7 @@ class GeventRPCClient(RPCClientBase):
         self._exit_ev.set()
         self._ready_ev.set()
         self.socket.close(0)
+        logger.debug('waiting for the greenlet to exit')
         self.greenlet.join()
         self.greenlet = None
         self._ready_ev.clear()
@@ -185,18 +189,20 @@ class GeventRPCClient(RPCClientBase):
         if ignore:
             return None
 
+        _, spawn_later, _, Condition = get_green_tools(env=self.green_env)
+
         if timeout and timeout > 0:
             def _abort_request():
-                result = self._results.pop(req_id, None)
-                if result:
+                future = self._futures.pop(req_id, None)
+                if future is not None:
                     tout_msg  = "Request %s timed out after %s sec" % (req_id, timeout)
                     logger.debug(tout_msg)
-                    result.set_exception(RPCTimeoutError(tout_msg))
+                    future.set_exception(RPCTimeoutError(tout_msg))
             spawn_later(timeout, _abort_request)
 
-        result = AsyncResult()
-        self._results[req_id] = result
+        future = Future(condition=Condition())
+        self._futures[req_id] = future
         #logger.debug('waiting for result=%r' % result)
-        return result.get()  # block waiting for a reply passed by ._reader
+        return future.result()  # block waiting for a reply passed by ._reader
     #}
 

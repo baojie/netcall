@@ -8,6 +8,7 @@ from tempfile import mkdtemp
 from netcall.utils import setup_logger
 
 logger = setup_logger()
+setup_logger('greenhouse')
 
 
 class BaseCase(TestCase):

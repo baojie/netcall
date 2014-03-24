@@ -27,7 +27,7 @@ from threading import Event, Timer
 try:
     from concurrent.futures import Future
 except ImportError:
-    from tornado.concurrent import Future
+    from ..futures import Future
 
 import zmq
 
