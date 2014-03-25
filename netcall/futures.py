@@ -6,7 +6,10 @@
 #         support alternative implementations like gevent & eventlet)
 
 from __future__ import with_statement
+from __future__ import absolute_import
+
 import logging
+
 
 __author__ = 'Brian Quinlan (brian@sweetapp.com)'
 
